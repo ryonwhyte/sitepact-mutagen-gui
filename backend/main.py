@@ -695,6 +695,47 @@ async def get_connection(connection_id: int):
             "is_favorite": connection.is_favorite
         }
 
+@app.post("/api/connections/{connection_id}/duplicate")
+async def duplicate_connection(connection_id: int):
+    """Duplicate a saved connection"""
+    with get_db() as db:
+        connection = db.query(SavedConnection).filter(SavedConnection.id == connection_id).first()
+        if not connection:
+            raise HTTPException(status_code=404, detail="Connection not found")
+
+        # Create a new connection with " (Copy)" appended to name
+        base_name = f"{connection.name} (Copy)"
+        copy_name = base_name
+        counter = 1
+
+        # Ensure unique name
+        while db.query(SavedConnection).filter(SavedConnection.name == copy_name).first():
+            counter += 1
+            copy_name = f"{base_name} {counter}"
+
+        new_connection = SavedConnection(
+            name=copy_name,
+            host=connection.host,
+            port=connection.port,
+            username=connection.username,
+            remote_path=connection.remote_path,
+            local_path=connection.local_path,
+            ssh_key_path=connection.ssh_key_path,
+            sync_mode=connection.sync_mode,
+            tags=connection.tags,
+            is_favorite=False
+        )
+
+        db.add(new_connection)
+        db.commit()
+        db.refresh(new_connection)
+
+        return {
+            "message": "Connection duplicated",
+            "id": new_connection.id,
+            "name": new_connection.name
+        }
+
 @app.put("/api/connections/{connection_id}")
 async def update_connection(connection_id: int, config: ConnectionConfig):
     """Update an existing saved connection"""

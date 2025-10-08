@@ -22,8 +22,9 @@ Sitepact Mutagen GUI provides a user-friendly desktop interface for [Mutagen](ht
 ### Connection Management
 - 🚀 **Easy Setup** - Intuitive form-based connection creation
 - 🔄 **Smart Initial Sync** - Choose to download, upload, or skip initial sync with rsync
-- 🔑 **SSH Key Management** - Auto-detection of SSH keys with custom key support
+- 🔑 **SSH Key Management** - Auto-detection and configuration of SSH keys
 - 💾 **Save & Reuse** - Store frequently used connections
+- ✏️ **Edit & Duplicate** - Modify saved connections or duplicate for similar setups
 - 🏷️ **Tagging System** - Organize connections with custom tags
 - 📦 **Import/Export** - Transfer connections between machines
 
@@ -35,6 +36,7 @@ Sitepact Mutagen GUI provides a user-friendly desktop interface for [Mutagen](ht
   - One-way Download - Remote to local mirroring
 - 📊 **Real-time Monitoring** - Live status updates via WebSockets
 - 🎮 **Session Control** - Pause, resume, flush, or terminate with one click
+- ⚠️ **Conflict Resolution** - Automatic detection with dialog to choose local or remote version
 
 ## 🔧 Prerequisites
 
@@ -127,21 +129,34 @@ npm run electron-dev
 
 #### Saved Connections
 - Quick connect to saved configurations
-- Edit or delete saved connections
+- Edit existing connections
+- Duplicate connections for similar setups (quick path changes)
+- Delete unwanted connections
 - Bulk import/export functionality
 
 ### SSH Configuration
 
-The application automatically detects SSH keys from:
-- `~/.ssh/id_rsa`
-- `~/.ssh/id_ed25519`
-- `~/.ssh/id_ecdsa`
-- Other private keys in `~/.ssh/`
+The application provides advanced SSH key handling:
 
-Additionally:
-- Use SSH agent for key management
-- Browse for custom key files
-- Fallback to password authentication
+**Automatic SSH Key Management:**
+- Detects keys from `~/.ssh/` directory (id_rsa, id_ed25519, id_ecdsa, etc.)
+- Creates SSH config entries with host aliases for each connection
+- Automatically fixes key permissions (chmod 600)
+- Attempts to add keys to ssh-agent when available
+- Supports custom key paths via file browser
+
+**SSH Config Integration:**
+Each connection creates an entry like:
+```
+# Mutagen GUI: connection-name
+Host mutagen-connection-name
+  HostName example.com
+  User username
+  Port 22
+  IdentityFile /path/to/key
+```
+
+This ensures reliable authentication without manual SSH configuration.
 
 ## 🏗️ Development
 
@@ -168,6 +183,7 @@ sitepact-mutagen-gui/
 │   │   │   ├── ConnectionForm.tsx
 │   │   │   ├── SessionList.tsx
 │   │   │   ├── SavedConnections.tsx
+│   │   │   ├── ConflictResolutionDialog.tsx
 │   │   │   └── InitialSyncDialog.tsx
 │   │   └── api/           # API client
 │   ├── electron/          # Electron main process
@@ -277,8 +293,11 @@ pkill -f electron
 ### Debug Mode
 
 View console output with DevTools:
-- Press `Ctrl+Shift+I` (Linux/Windows)
+- Press `Ctrl+Shift+I` (Linux/Windows) or `F12`
 - Press `Cmd+Option+I` (macOS)
+- Via menu: View → Toggle DevTools
+
+DevTools do not open automatically to reduce clutter, but are accessible anytime for debugging.
 
 ## 🤝 Contributing
 

@@ -32,7 +32,8 @@ import {
   Search,
   Add,
   FileDownload,
-  FileUpload
+  FileUpload,
+  ContentCopy
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient, Connection } from '../api/client';
@@ -66,6 +67,16 @@ const SavedConnections: React.FC = () => {
     mutationFn: (id: number) => apiClient.quickConnect(id),
     onSuccess: () => {
       navigate('/sessions');
+    },
+  });
+
+  // Duplicate mutation
+  const duplicateMutation = useMutation({
+    mutationFn: (id: number) => apiClient.duplicateConnection(id),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['connections'] });
+      // Navigate to edit the duplicated connection
+      navigate(`/connections/edit/${data.id}`);
     },
   });
 
@@ -273,6 +284,15 @@ const SavedConnections: React.FC = () => {
         }}>
           <Edit fontSize="small" sx={{ mr: 1 }} />
           Edit
+        </MenuItem>
+        <MenuItem onClick={() => {
+          handleMenuClose();
+          if (selectedId) {
+            duplicateMutation.mutate(selectedId);
+          }
+        }}>
+          <ContentCopy fontSize="small" sx={{ mr: 1 }} />
+          Duplicate
         </MenuItem>
         <MenuItem onClick={() => {
           handleMenuClose();

@@ -131,6 +131,10 @@ class ApiClient {
     return this.fetch(`/connections/${id}/connect`, { method: 'POST' });
   }
 
+  async duplicateConnection(id: number): Promise<{ message: string; id: number; name: string }> {
+    return this.fetch(`/connections/${id}/duplicate`, { method: 'POST' });
+  }
+
   // Export/Import
   async exportConnections(): Promise<any> {
     return this.fetch('/export', { method: 'POST' });

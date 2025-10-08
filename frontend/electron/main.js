@@ -142,10 +142,7 @@ function createWindow() {
     }
   });
 
-  // Open DevTools in development to debug issues
-  if (isDev) {
-    mainWindow.webContents.openDevTools();
-  }
+  // DevTools available via View menu (Ctrl+Shift+I) or F12
 
   // Handle window closed
   mainWindow.on('closed', () => {
