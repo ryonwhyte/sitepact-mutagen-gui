@@ -25,16 +25,19 @@ import {
 } from '@mui/icons-material';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiClient, Connection, SSHKey } from '../api/client';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import InitialSyncDialog from './InitialSyncDialog';
 
 const ConnectionForm: React.FC = () => {
   const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
+  const isEditMode = Boolean(id);
   const [showSuccess, setShowSuccess] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
   const [newTag, setNewTag] = useState('');
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isLoading, setIsLoading] = useState(isEditMode);
 
   const [formData, setFormData] = useState<Connection>({
     name: '',
@@ -54,12 +57,39 @@ const ConnectionForm: React.FC = () => {
     queryFn: () => apiClient.listSSHKeys(),
   });
 
+  // Load connection data if editing
+  useEffect(() => {
+    if (isEditMode && id) {
+      setIsLoading(true);
+      apiClient.getConnection(parseInt(id))
+        .then((connection) => {
+          setFormData(connection);
+          setTags(connection.tags || []);
+          setIsLoading(false);
+        })
+        .catch((error) => {
+          console.error('Failed to load connection:', error);
+          setIsLoading(false);
+        });
+    }
+  }, [id, isEditMode]);
+
   const createMutation = useMutation({
     mutationFn: (data: Connection) => apiClient.createSession(data),
     onSuccess: () => {
       setShowSuccess(true);
       setTimeout(() => {
         navigate('/sessions');
+      }, 2000);
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (data: Connection) => apiClient.updateConnection(parseInt(id!), data),
+    onSuccess: () => {
+      setShowSuccess(true);
+      setTimeout(() => {
+        navigate('/connections');
       }, 2000);
     },
   });
@@ -96,8 +126,13 @@ const ConnectionForm: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // Show the initial sync dialog instead of creating immediately
-    setSyncDialogOpen(true);
+    if (isEditMode) {
+      // Update the connection without syncing
+      updateMutation.mutate(formData);
+    } else {
+      // Show the initial sync dialog for new connections
+      setSyncDialogOpen(true);
+    }
   };
 
   const handleSyncConfirm = (direction: 'download' | 'upload' | 'skip') => {
@@ -141,10 +176,20 @@ const ConnectionForm: React.FC = () => {
     }
   };
 
+  if (isLoading) {
+    return (
+      <Box>
+        <Typography variant="h4" gutterBottom>
+          Loading...
+        </Typography>
+      </Box>
+    );
+  }
+
   return (
     <Box>
       <Typography variant="h4" gutterBottom>
-        Create New Connection
+        {isEditMode ? 'Edit Connection' : 'Create New Connection'}
       </Typography>
 
       <Paper sx={{ p: 3, mt: 2 }}>
@@ -337,10 +382,10 @@ const ConnectionForm: React.FC = () => {
             </Grid>
 
             {/* Error Display */}
-            {createMutation.isError && (
+            {(createMutation.isError || updateMutation.isError) && (
               <Grid item xs={12}>
                 <Alert severity="error">
-                  {(createMutation.error as Error).message}
+                  {((createMutation.error || updateMutation.error) as Error).message}
                 </Alert>
               </Grid>
             )}
@@ -351,20 +396,31 @@ const ConnectionForm: React.FC = () => {
                 <Button
                   type="submit"
                   variant="contained"
-                  startIcon={<CloudUpload />}
-                  disabled={createMutation.isPending}
+                  startIcon={isEditMode ? <Save /> : <CloudUpload />}
+                  disabled={createMutation.isPending || updateMutation.isPending}
                 >
-                  {createMutation.isPending ? 'Creating...' : 'Create & Connect'}
+                  {isEditMode
+                    ? (updateMutation.isPending ? 'Updating...' : 'Update Connection')
+                    : (createMutation.isPending ? 'Creating...' : 'Create & Connect')
+                  }
                 </Button>
+                {!isEditMode && (
+                  <Button
+                    variant="outlined"
+                    startIcon={<Save />}
+                    onClick={() => {
+                      // Save without connecting - would need a separate API endpoint
+                      alert('Save functionality coming soon!');
+                    }}
+                  >
+                    Save for Later
+                  </Button>
+                )}
                 <Button
                   variant="outlined"
-                  startIcon={<Save />}
-                  onClick={() => {
-                    // Save without connecting - would need a separate API endpoint
-                    alert('Save functionality coming soon!');
-                  }}
+                  onClick={() => navigate(isEditMode ? '/connections' : '/dashboard')}
                 >
-                  Save for Later
+                  Cancel
                 </Button>
               </Box>
             </Grid>
@@ -376,7 +432,7 @@ const ConnectionForm: React.FC = () => {
         open={showSuccess}
         autoHideDuration={2000}
         onClose={() => setShowSuccess(false)}
-        message="Connection created successfully!"
+        message={isEditMode ? "Connection updated successfully!" : "Connection created successfully!"}
       />
 
       <InitialSyncDialog

@@ -211,10 +211,10 @@ npm run electron-dev
 ```bash
 cd frontend
 
-# Linux (AppImage, deb, rpm)
+# Linux (AppImage, deb)
 npm run dist:linux
 
-# macOS (dmg, pkg)
+# macOS (dmg)
 npm run dist:mac
 
 # Windows (exe installer)
@@ -224,7 +224,21 @@ npm run dist:win
 npm run dist
 ```
 
-Distributables will be created in `frontend/dist-electron/`
+Distributables will be created in `builds/`
+
+### Distribution Channels
+
+**Current:**
+- GitHub Releases (manual download)
+- AppImage (universal Linux)
+- Debian package (.deb)
+
+**Planned:**
+- 🔄 Flathub (universal Linux with sandboxing)
+- 🔄 Snap Store (Ubuntu Software Center)
+- 🔄 AUR (Arch User Repository)
+- 🔄 Homebrew (macOS package manager)
+- 🔄 Chocolatey/winget (Windows package managers)
 
 ## 🐛 Troubleshooting
 

@@ -10,4 +10,4 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 python-dotenv==1.0.1
 asyncssh==2.18.0
-paramiko==3.5.0
+paramiko==3.5.0PyYAML>=6.0

@@ -96,9 +96,31 @@ class ApiClient {
     });
   }
 
+  async getSessionConflicts(sessionName: string): Promise<{ conflicts: any[]; count: number }> {
+    return this.fetch(`/sessions/${sessionName}/conflicts`);
+  }
+
+  async resolveConflicts(sessionName: string, winner: 'alpha' | 'beta'): Promise<{ message: string; result: string }> {
+    return this.fetch(`/sessions/${sessionName}/resolve-conflicts`, {
+      method: 'POST',
+      body: JSON.stringify({ winner }),
+    });
+  }
+
   // Saved Connections
   async listConnections(): Promise<Connection[]> {
     return this.fetch<Connection[]>('/connections');
+  }
+
+  async getConnection(id: number): Promise<Connection> {
+    return this.fetch<Connection>(`/connections/${id}`);
+  }
+
+  async updateConnection(id: number, connection: Connection): Promise<{ message: string }> {
+    return this.fetch(`/connections/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(connection),
+    });
   }
 
   async deleteConnection(id: number): Promise<{ message: string }> {

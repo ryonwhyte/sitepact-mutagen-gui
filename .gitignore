@@ -29,6 +29,10 @@ frontend/dist/
 frontend/dist-electron/
 frontend/build/
 
+# Builds (too large for GitHub)
+builds/
+!builds/README.md
+
 # Electron
 .electron/
 out/

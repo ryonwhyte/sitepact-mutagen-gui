@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Paper,
@@ -28,16 +28,20 @@ import {
   Delete,
   Info,
   CheckCircle,
-  Error
+  Error,
+  Warning
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient, MutagenSession } from '../api/client';
+import ConflictResolutionDialog from './ConflictResolutionDialog';
 
 const SessionList: React.FC = () => {
   const queryClient = useQueryClient();
   const [selectedSession, setSelectedSession] = useState<MutagenSession | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [conflictSession, setConflictSession] = useState<string | null>(null);
+  const [conflicts, setConflicts] = useState<any[]>([]);
 
   // Fetch sessions
   const { data: sessions = [], isLoading } = useQuery({
@@ -54,6 +58,40 @@ const SessionList: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['sessions'] });
     },
   });
+
+  // Conflict resolution mutation
+  const resolveMutation = useMutation({
+    mutationFn: ({ sessionName, winner }: { sessionName: string; winner: 'alpha' | 'beta' }) =>
+      apiClient.resolveConflicts(sessionName, winner),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      setConflictSession(null);
+      setConflicts([]);
+    },
+  });
+
+  // Check for conflicts when sessions load or update
+  useEffect(() => {
+    const checkConflicts = async () => {
+      for (const session of sessions) {
+        try {
+          const result = await apiClient.getSessionConflicts(session.name);
+          if (result.count > 0) {
+            setConflictSession(session.name);
+            setConflicts(result.conflicts);
+            break; // Show one at a time
+          }
+        } catch (error) {
+          // Ignore errors for individual session conflict checks
+          console.debug(`Could not check conflicts for ${session.name}:`, error);
+        }
+      }
+    };
+
+    if (sessions.length > 0) {
+      checkConflicts();
+    }
+  }, [sessions]);
 
   const handleAction = (sessionName: string, action: string) => {
     if (action === 'terminate') {
@@ -73,6 +111,12 @@ const SessionList: React.FC = () => {
   const showDetails = (session: MutagenSession) => {
     setSelectedSession(session);
     setDetailsOpen(true);
+  };
+
+  const handleResolveConflict = (winner: 'alpha' | 'beta') => {
+    if (conflictSession) {
+      resolveMutation.mutate({ sessionName: conflictSession, winner });
+    }
   };
 
   const getStatusChip = (status: string) => {
@@ -291,6 +335,18 @@ const SessionList: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Conflict Resolution Dialog */}
+      <ConflictResolutionDialog
+        open={!!conflictSession}
+        sessionName={conflictSession || ''}
+        conflicts={conflicts}
+        onResolve={handleResolveConflict}
+        onCancel={() => {
+          setConflictSession(null);
+          setConflicts([]);
+        }}
+      />
     </Box>
   );
 };

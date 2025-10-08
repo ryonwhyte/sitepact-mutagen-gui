@@ -32,7 +32,13 @@ app = FastAPI(title="Mutagen GUI API", version="1.0.0")
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],  # Vite dev server
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:*",  # Allow any localhost port for Electron
+        "http://127.0.0.1:*",
+    ],
+    allow_origin_regex=r"http://localhost:\d+",  # Allow any localhost port
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -57,7 +63,7 @@ class SavedConnection(Base):
     local_path = Column(String)
     ssh_key_path = Column(String, nullable=True)
     sync_mode = Column(String, default="one-way-safe")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=datetime.now)
     last_used = Column(DateTime, nullable=True)
     is_favorite = Column(Boolean, default=False)
     tags = Column(Text, nullable=True)  # JSON array of tags
@@ -130,16 +136,22 @@ class MutagenManager:
 
         raise RuntimeError("Mutagen binary not found")
 
-    async def run_command(self, *args: str, timeout: int = 60) -> str:
+    async def run_command(self, *args: str, timeout: int = 60, env: Optional[Dict[str, str]] = None) -> str:
         """Execute mutagen command"""
         cmd = [self.mutagen_bin] + list(args)
         logger.info(f"Running command: {' '.join(cmd)}")
+
+        # Merge environment variables with current environment
+        cmd_env = os.environ.copy()
+        if env:
+            cmd_env.update(env)
 
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.PIPE,
+                env=cmd_env
             )
 
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
@@ -203,13 +215,17 @@ class MutagenManager:
         # Build rsync command
         remote_url = f"{config.username}@{config.host}:{config.remote_path}"
 
+        # Build SSH command for rsync
+        ssh_cmd = f"ssh -p {config.port}"
+        if config.ssh_key_path:
+            ssh_cmd += f" -i {config.ssh_key_path}"
+        # Add options to bypass strict host checking
+        ssh_cmd += " -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+
         rsync_args = [
             "rsync", "-avz", "--progress",
-            "-e", f"ssh -p {config.port}"
+            "-e", ssh_cmd
         ]
-
-        if config.ssh_key_path:
-            rsync_args[4] = f"ssh -p {config.port} -i {config.ssh_key_path}"
 
         if direction == 'download':
             # Download from remote to local
@@ -242,13 +258,10 @@ class MutagenManager:
         if config.initial_sync_direction and config.initial_sync_direction != 'skip':
             await self.perform_initial_sync(config, config.initial_sync_direction)
 
-        # Construct remote URL
-        remote_url = f"{config.username}@{config.host}:{config.remote_path}"
-
         # Create local directory if it doesn't exist
         Path(config.local_path).mkdir(parents=True, exist_ok=True)
 
-        # Build command arguments
+        # Build command arguments - keep it simple like the old script
         args = [
             "sync", "create",
             f"--name={config.name}",
@@ -257,12 +270,75 @@ class MutagenManager:
             "--default-directory-mode=0755"
         ]
 
-        # Add SSH options if needed
-        if config.port != 22:
-            args.append(f"--ssh-port={config.port}")
+        # Determine remote URL - will be modified if SSH key is used
+        remote_url = None
 
+        # If SSH key is specified, ensure SSH config is set up
+        # This is the most reliable approach for Mutagen
         if config.ssh_key_path:
-            args.append(f"--ssh-identity-file={config.ssh_key_path}")
+            # Fix permissions if needed (SSH requires 600)
+            key_path = Path(config.ssh_key_path)
+            if key_path.exists():
+                current_perms = key_path.stat().st_mode & 0o777
+                if current_perms != 0o600:
+                    logger.info(f"Fixing SSH key permissions from {oct(current_perms)} to 0600")
+                    key_path.chmod(0o600)
+
+                # Add or update SSH config entry for this host
+                ssh_config_path = Path.home() / '.ssh' / 'config'
+                ssh_config_path.parent.mkdir(parents=True, exist_ok=True)
+
+                # Create a unique host alias for this connection
+                host_alias = f"mutagen-{config.name}"
+
+                # Read existing config
+                existing_config = ""
+                if ssh_config_path.exists():
+                    existing_config = ssh_config_path.read_text()
+
+                # Check if entry already exists
+                entry_marker = f"# Mutagen GUI: {config.name}"
+                if entry_marker not in existing_config:
+                    # Append new entry
+                    new_entry = f"\n{entry_marker}\nHost {host_alias}\n"
+                    new_entry += f"  HostName {config.host}\n"
+                    new_entry += f"  User {config.username}\n"
+                    new_entry += f"  Port {config.port}\n"
+                    new_entry += f"  IdentityFile {config.ssh_key_path}\n"
+                    new_entry += f"  StrictHostKeyChecking no\n"
+                    new_entry += f"  UserKnownHostsFile /dev/null\n\n"
+
+                    with ssh_config_path.open('a') as f:
+                        f.write(new_entry)
+                    logger.info(f"Added SSH config entry for {host_alias}")
+
+                # Use the host alias in the remote URL
+                remote_url = f"{config.username}@{host_alias}:{config.remote_path}"
+
+                # Try to add key to ssh-agent (if it's running and key isn't encrypted)
+                # This helps avoid passphrase prompts for keys without passphrases
+                try:
+                    # Check if agent is running
+                    agent_check = subprocess.run(['ssh-add', '-l'],
+                                                capture_output=True,
+                                                check=False)
+                    if agent_check.returncode == 0:
+                        # Try to add the key (will only work for unencrypted keys)
+                        subprocess.run(['ssh-add', config.ssh_key_path],
+                                     capture_output=True,
+                                     stdin=subprocess.DEVNULL,  # Don't prompt for passphrase
+                                     check=False,
+                                     timeout=2)
+                        logger.info(f"Attempted to add key to ssh-agent: {config.ssh_key_path}")
+                except Exception as e:
+                    logger.debug(f"Could not add key to agent (this is normal): {e}")
+
+        # If no SSH key, construct remote URL with port if needed
+        if not remote_url:
+            if config.port and config.port != 22:
+                remote_url = f"{config.username}@{config.host}:{config.port}:{config.remote_path}"
+            else:
+                remote_url = f"{config.username}@{config.host}:{config.remote_path}"
 
         # Determine source and destination based on sync mode
         # For two-way modes, order doesn't matter much
@@ -274,9 +350,8 @@ class MutagenManager:
             # Default: local first (works for two-way and one-way-safe)
             args.extend([config.local_path, remote_url])
 
-        # Run the command
+        # Run the command - Mutagen will use system SSH config and agent
         result = await self.run_command(*args, timeout=120)
-
         return result
 
     async def perform_action(self, session_name: str, action: str) -> str:
@@ -378,20 +453,37 @@ async def list_sessions():
 async def create_session(config: ConnectionConfig):
     """Create a new sync session"""
     try:
-        # Save connection to database
+        # Save or update connection in database
         with get_db() as db:
-            saved = SavedConnection(
-                name=config.name,
-                host=config.host,
-                port=config.port,
-                username=config.username,
-                remote_path=config.remote_path,
-                local_path=config.local_path,
-                ssh_key_path=config.ssh_key_path,
-                sync_mode=config.sync_mode,
-                tags=json.dumps(config.tags) if config.tags else None
-            )
-            db.add(saved)
+            # Check if connection already exists
+            existing = db.query(SavedConnection).filter(SavedConnection.name == config.name).first()
+
+            if existing:
+                # Update existing connection
+                existing.host = config.host
+                existing.port = config.port
+                existing.username = config.username
+                existing.remote_path = config.remote_path
+                existing.local_path = config.local_path
+                existing.ssh_key_path = config.ssh_key_path
+                existing.sync_mode = config.sync_mode
+                existing.tags = json.dumps(config.tags) if config.tags else None
+                existing.last_used = datetime.now()
+            else:
+                # Create new connection
+                saved = SavedConnection(
+                    name=config.name,
+                    host=config.host,
+                    port=config.port,
+                    username=config.username,
+                    remote_path=config.remote_path,
+                    local_path=config.local_path,
+                    ssh_key_path=config.ssh_key_path,
+                    sync_mode=config.sync_mode,
+                    tags=json.dumps(config.tags) if config.tags else None
+                )
+                db.add(saved)
+
             db.commit()
 
         # Create mutagen session
@@ -421,6 +513,87 @@ async def perform_session_action(action: SessionAction):
         return {"message": f"Action {action.action} performed", "result": result}
     except Exception as e:
         logger.error(f"Failed to perform action: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/sessions/{session_name}/conflicts")
+async def get_session_conflicts(session_name: str):
+    """Get conflicts for a session"""
+    try:
+        # Get detailed session info with conflicts
+        result = await mutagen_mgr.run_command("sync", "list", "--long", session_name)
+
+        # Parse conflicts from output
+        conflicts = []
+        lines = result.split('\n')
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+            if line.startswith('(alpha)') or line.startswith('(beta)'):
+                # Extract file path
+                parts = line.split()
+                if len(parts) >= 2:
+                    path = parts[1]
+                    # Check if we already have this conflict
+                    if not any(c['path'] == path for c in conflicts):
+                        conflicts.append({'path': path})
+            i += 1
+
+        return {"conflicts": conflicts, "count": len(conflicts)}
+    except Exception as e:
+        logger.error(f"Failed to get conflicts: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/sessions/{session_name}/resolve-conflicts")
+async def resolve_conflicts(session_name: str, resolution: dict):
+    """Resolve session conflicts by recreating with appropriate mode"""
+    try:
+        winner = resolution.get('winner', 'alpha')  # 'alpha' for local, 'beta' for remote
+
+        if winner not in ['alpha', 'beta']:
+            raise HTTPException(status_code=400, detail="Winner must be 'alpha' or 'beta'")
+
+        # Get session info first
+        sessions = await mutagen_mgr.list_sessions()
+        session = next((s for s in sessions if s["name"] == session_name), None)
+
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        # Terminate the existing session
+        await mutagen_mgr.run_command("sync", "terminate", session_name)
+        logger.info(f"Terminated session {session_name}")
+
+        # Extract alpha and beta URLs
+        alpha_url = session["alpha"]["url"]
+        beta_url = session["beta"]["url"]
+
+        # Recreate with one-way-replica mode to force the winner's version
+        if winner == 'alpha':
+            # Local → Remote (force local to override remote)
+            result = await mutagen_mgr.run_command(
+                "sync", "create",
+                f"--name={session_name}",
+                "--mode=one-way-replica",
+                "--default-file-mode=0644",
+                "--default-directory-mode=0755",
+                alpha_url, beta_url
+            )
+        else:
+            # Remote → Local (force remote to override local)
+            result = await mutagen_mgr.run_command(
+                "sync", "create",
+                f"--name={session_name}",
+                "--mode=one-way-replica",
+                "--default-file-mode=0644",
+                "--default-directory-mode=0755",
+                beta_url, alpha_url
+            )
+
+        logger.info(f"Recreated session {session_name} with {winner} as winner")
+
+        return {"message": f"Conflicts resolved - {winner} version will be used", "result": result}
+    except Exception as e:
+        logger.error(f"Failed to resolve conflicts: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/connections")
@@ -469,7 +642,7 @@ async def quick_connect(connection_id: int):
             raise HTTPException(status_code=404, detail="Connection not found")
 
         # Update last used
-        connection.last_used = datetime.utcnow()
+        connection.last_used = datetime.now()
         db.commit()
 
         # Create config from saved connection
@@ -498,6 +671,53 @@ async def quick_connect(connection_id: int):
             result = await mutagen_mgr.create_session(config)
             return {"message": "Session created", "name": config.name, "result": result}
 
+@app.get("/api/connections/{connection_id}")
+async def get_connection(connection_id: int):
+    """Get a single connection by ID"""
+    with get_db() as db:
+        connection = db.query(SavedConnection).filter(SavedConnection.id == connection_id).first()
+        if not connection:
+            raise HTTPException(status_code=404, detail="Connection not found")
+
+        return {
+            "id": connection.id,
+            "name": connection.name,
+            "host": connection.host,
+            "port": connection.port,
+            "username": connection.username,
+            "remote_path": connection.remote_path,
+            "local_path": connection.local_path,
+            "ssh_key_path": connection.ssh_key_path,
+            "sync_mode": connection.sync_mode,
+            "tags": json.loads(connection.tags) if connection.tags else [],
+            "created_at": connection.created_at.isoformat() if connection.created_at else None,
+            "last_used": connection.last_used.isoformat() if connection.last_used else None,
+            "is_favorite": connection.is_favorite
+        }
+
+@app.put("/api/connections/{connection_id}")
+async def update_connection(connection_id: int, config: ConnectionConfig):
+    """Update an existing saved connection"""
+    with get_db() as db:
+        connection = db.query(SavedConnection).filter(SavedConnection.id == connection_id).first()
+        if not connection:
+            raise HTTPException(status_code=404, detail="Connection not found")
+
+        # Update connection details
+        connection.name = config.name
+        connection.host = config.host
+        connection.port = config.port
+        connection.username = config.username
+        connection.remote_path = config.remote_path
+        connection.local_path = config.local_path
+        connection.ssh_key_path = config.ssh_key_path
+        connection.sync_mode = config.sync_mode
+        connection.tags = json.dumps(config.tags) if config.tags else None
+
+        db.commit()
+
+        return {"message": "Connection updated successfully"}
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket for real-time updates"""
@@ -520,7 +740,7 @@ async def export_connections():
 
         export_data = {
             "version": "1.0.0",
-            "exported_at": datetime.utcnow().isoformat(),
+            "exported_at": datetime.now().isoformat(),
             "connections": [
                 {
                     "name": c.name,

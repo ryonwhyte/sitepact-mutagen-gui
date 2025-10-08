@@ -251,7 +251,9 @@ function AppContent() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/connect" element={<ConnectionForm />} />
+            <Route path="/connections/edit/:id" element={<ConnectionForm />} />
             <Route path="/sessions" element={<SessionList />} />
+            <Route path="/connections" element={<SavedConnections />} />
             <Route path="/saved" element={<SavedConnections />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Paper,
@@ -35,7 +36,6 @@ import {
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient, Connection } from '../api/client';
-import { useNavigate } from 'react-router-dom';
 
 const SavedConnections: React.FC = () => {
   const navigate = useNavigate();
@@ -268,9 +268,8 @@ const SavedConnections: React.FC = () => {
         onClose={handleMenuClose}
       >
         <MenuItem onClick={() => {
-          // Edit functionality
           handleMenuClose();
-          alert('Edit functionality coming soon!');
+          navigate(`/connections/edit/${selectedId}`);
         }}>
           <Edit fontSize="small" sx={{ mr: 1 }} />
           Edit
