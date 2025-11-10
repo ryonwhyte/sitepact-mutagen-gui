@@ -118,7 +118,7 @@ class MutagenManager:
         self.mutagen_bin = self._find_mutagen()
         self.active_monitors = {}
 
-    def _find_mutagen(self) -> str:
+    def _find_mutagen(self) -> Optional[str]:
         """Find mutagen binary in PATH"""
         paths = [
             "/home/linuxbrew/.linuxbrew/bin/mutagen",
@@ -134,10 +134,20 @@ class MutagenManager:
         if result.returncode == 0:
             return result.stdout.strip()
 
-        raise RuntimeError("Mutagen binary not found")
+        logger.warning("Mutagen binary not found in system")
+        return None
+
+    def is_mutagen_installed(self) -> bool:
+        """Check if Mutagen is installed"""
+        return self.mutagen_bin is not None
 
     async def run_command(self, *args: str, timeout: int = 60, env: Optional[Dict[str, str]] = None) -> str:
         """Execute mutagen command"""
+        if not self.mutagen_bin:
+            raise HTTPException(
+                status_code=503,
+                detail="Mutagen is not installed. Please install Mutagen first: https://mutagen.io/documentation/introduction/installation"
+            )
         cmd = [self.mutagen_bin] + list(args)
         logger.info(f"Running command: {' '.join(cmd)}")
 
@@ -252,6 +262,12 @@ class MutagenManager:
         except asyncio.TimeoutError:
             raise RuntimeError("Initial sync timed out after 5 minutes")
 
+    def sanitize_name(self, name: str) -> str:
+        """Sanitize connection name for use in Mutagen session names and SSH config"""
+        # Replace spaces and special characters with hyphens
+        # Mutagen session names don't allow spaces
+        return name.replace(' ', '-').replace('_', '-')
+
     async def create_session(self, config: ConnectionConfig) -> str:
         """Create a new mutagen sync session"""
         # Perform initial sync if requested
@@ -261,10 +277,13 @@ class MutagenManager:
         # Create local directory if it doesn't exist
         Path(config.local_path).mkdir(parents=True, exist_ok=True)
 
+        # Sanitize the session name (Mutagen doesn't allow spaces)
+        session_name = self.sanitize_name(config.name)
+
         # Build command arguments - keep it simple like the old script
         args = [
             "sync", "create",
-            f"--name={config.name}",
+            f"--name={session_name}",
             f"--mode={config.sync_mode}",
             "--default-file-mode=0644",
             "--default-directory-mode=0755"
@@ -288,8 +307,8 @@ class MutagenManager:
                 ssh_config_path = Path.home() / '.ssh' / 'config'
                 ssh_config_path.parent.mkdir(parents=True, exist_ok=True)
 
-                # Create a unique host alias for this connection
-                host_alias = f"mutagen-{config.name}"
+                # Create a unique host alias for this connection (sanitized)
+                host_alias = f"mutagen-{session_name}"
 
                 # Read existing config
                 existing_config = ""
@@ -431,6 +450,16 @@ async def list_ssh_keys() -> List[SSHKey]:
 
     return keys
 
+@app.get("/api/system/mutagen-installed")
+async def check_mutagen_installed():
+    """Check if Mutagen is installed"""
+    installed = mutagen_mgr.is_mutagen_installed()
+    return {
+        "installed": installed,
+        "path": mutagen_mgr.mutagen_bin if installed else None,
+        "install_url": "https://mutagen.io/documentation/introduction/installation"
+    }
+
 @app.get("/api/daemon/status")
 async def get_daemon_status():
     """Get daemon status"""
@@ -446,8 +475,23 @@ async def start_daemon():
 @app.get("/api/sessions")
 async def list_sessions():
     """List all sync sessions"""
-    sessions = await mutagen_mgr.list_sessions()
-    return sessions
+    try:
+        # Ensure daemon is running first
+        daemon_status = await mutagen_mgr.daemon_status()
+        if daemon_status != "Running":
+            logger.info("Daemon not running, starting it...")
+            await mutagen_mgr.start_daemon()
+            # Give daemon a moment to start
+            await asyncio.sleep(1)
+
+        sessions = await mutagen_mgr.list_sessions()
+        return sessions
+    except RuntimeError as e:
+        if "timed out" in str(e).lower():
+            # Return empty list on timeout rather than failing
+            logger.warning(f"Session list timed out (daemon may be starting): {e}")
+            return []
+        raise
 
 @app.post("/api/sessions/create")
 async def create_session(config: ConnectionConfig):
@@ -658,18 +702,19 @@ async def quick_connect(connection_id: int):
             tags=json.loads(connection.tags) if connection.tags else []
         )
 
-        # Check if session already exists
+        # Check if session already exists (use sanitized name)
+        session_name = mutagen_mgr.sanitize_name(config.name)
         sessions = await mutagen_mgr.list_sessions()
-        existing = [s for s in sessions if s["name"] == config.name]
+        existing = [s for s in sessions if s["name"] == session_name]
 
         if existing:
             # Resume existing session
-            await mutagen_mgr.perform_action(config.name, "resume")
-            return {"message": "Session resumed", "name": config.name}
+            await mutagen_mgr.perform_action(session_name, "resume")
+            return {"message": "Session resumed", "name": session_name}
         else:
             # Create new session
             result = await mutagen_mgr.create_session(config)
-            return {"message": "Session created", "name": config.name, "result": result}
+            return {"message": "Session created", "name": session_name, "result": result}
 
 @app.get("/api/connections/{connection_id}")
 async def get_connection(connection_id: int):

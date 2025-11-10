@@ -29,19 +29,39 @@ const Dashboard: React.FC = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
-  // Fetch sessions
-  const { data: sessions = [], isLoading } = useQuery({
+  // Fetch sessions - with initial retry on mount
+  const { data: sessions = [], isLoading, error, refetch } = useQuery({
     queryKey: ['sessions'],
     queryFn: () => apiClient.listSessions(),
     refetchInterval: 30000, // Poll every 30 seconds instead of 5
+    retry: 5, // Retry failed requests up to 5 times on initial load
+    retryDelay: (attemptIndex) => Math.min(500 * 2 ** attemptIndex, 5000), // Faster initial retries
+    staleTime: 0, // Always fetch fresh data
+    refetchOnMount: true, // Always refetch when component mounts
   });
 
   // Fetch daemon status
-  const { data: daemonStatus } = useQuery({
+  const { data: daemonStatus, refetch: refetchDaemon } = useQuery({
     queryKey: ['daemon-status'],
     queryFn: () => apiClient.getDaemonStatus(),
     refetchInterval: 30000, // Poll every 30 seconds instead of 5
+    retry: 5,
+    retryDelay: (attemptIndex) => Math.min(500 * 2 ** attemptIndex, 5000),
+    staleTime: 0,
+    refetchOnMount: true,
   });
+
+  // Auto-retry on mount if data is empty
+  React.useEffect(() => {
+    if (!isLoading && sessions.length === 0 && !error) {
+      const timer = setTimeout(() => {
+        console.log('Auto-retrying dashboard data fetch...');
+        refetch();
+        refetchDaemon();
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoading, sessions.length, error, refetch, refetchDaemon]);
 
   // Session action mutation
   const actionMutation = useMutation({

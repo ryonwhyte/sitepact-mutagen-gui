@@ -48,6 +48,8 @@ const SessionList: React.FC = () => {
     queryKey: ['sessions'],
     queryFn: () => apiClient.listSessions(),
     refetchInterval: 30000, // Poll every 30 seconds instead of 3
+    retry: 3, // Retry failed requests up to 3 times
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // Exponential backoff
   });
 
   // Session action mutation

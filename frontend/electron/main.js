@@ -1,8 +1,11 @@
 const { app, BrowserWindow, Menu, Tray, ipcMain, dialog, shell, Notification } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
-const isDev = require('electron-is-dev');
+const electronIsDev = require('electron-is-dev');
 const fs = require('fs');
+
+// Fix: electron-is-dev v3 is an ES module, need to access .default
+const isDev = electronIsDev.default !== undefined ? electronIsDev.default : electronIsDev;
 
 // Keep a global reference of the window object
 let mainWindow = null;
@@ -11,10 +14,15 @@ let backendProcess = null;
 
 // Enable live reload for Electron in development
 if (isDev) {
-  require('electron-reload')(__dirname, {
-    electron: path.join(__dirname, '..', 'node_modules', '.bin', 'electron'),
-    hardResetMethod: 'exit'
-  });
+  try {
+    require('electron-reload')(__dirname, {
+      electron: path.join(__dirname, '..', 'node_modules', '.bin', 'electron'),
+      hardResetMethod: 'exit'
+    });
+  } catch (e) {
+    // electron-reload not available in production, that's fine
+    console.log('electron-reload not available (production mode)');
+  }
 }
 
 // Backend management
@@ -23,9 +31,37 @@ function startBackend() {
     ? path.join(__dirname, '..', '..', 'backend', 'main.py')
     : path.join(process.resourcesPath, 'backend', 'main.py');
 
-  const pythonPath = isDev
-    ? path.join(__dirname, '..', '..', 'backend', 'venv', 'bin', 'python')
-    : 'python3'; // In production, we'll bundle Python or use system Python
+  // Try to use venv first, install if needed, fallback to system python
+  let pythonPath;
+  if (isDev) {
+    pythonPath = path.join(__dirname, '..', '..', 'backend', 'venv', 'bin', 'python');
+  } else {
+    // In production, create venv in user's home directory to avoid permission issues
+    const os = require('os');
+    const venvDir = path.join(os.homedir(), '.sitepact-mutagen-gui', 'venv');
+    const venvPython = path.join(venvDir, 'bin', 'python');
+
+    if (fs.existsSync(venvPython)) {
+      pythonPath = venvPython;
+    } else {
+      // Try to create venv on first run
+      console.log('Setting up Python environment on first run...');
+      try {
+        const { execSync } = require('child_process');
+        // Create parent directory first
+        fs.mkdirSync(path.dirname(venvDir), { recursive: true });
+        execSync(`python3 -m venv "${venvDir}"`, { stdio: 'inherit' });
+        execSync(`"${venvPython}" -m pip install --quiet -r "${backendPath.replace('main.py', 'requirements.txt')}"`, { stdio: 'inherit' });
+        pythonPath = venvPython;
+        console.log('Python environment setup complete!');
+      } catch (error) {
+        console.error('Failed to setup Python environment:', error);
+        console.log('Falling back to system Python. You may need to install dependencies manually:');
+        console.log(`  pip3 install -r "${backendPath.replace('main.py', 'requirements.txt')}"`);
+        pythonPath = 'python3';
+      }
+    }
+  }
 
   backendProcess = spawn(pythonPath, [backendPath]);
 
@@ -445,6 +481,35 @@ ipcMain.handle('save-export-file', async (event, data) => {
   return { success: false };
 });
 
+// Helper to wait for backend to be ready
+async function waitForBackend(maxAttempts = 30) {
+  const http = require('http');
+
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      await new Promise((resolve, reject) => {
+        const req = http.get('http://localhost:8000/', (res) => {
+          if (res.statusCode === 200) {
+            resolve(true);
+          } else {
+            reject(new Error(`Status ${res.statusCode}`));
+          }
+        });
+        req.on('error', reject);
+        req.setTimeout(1000);
+      });
+      console.log('Backend is ready!');
+      return true;
+    } catch (error) {
+      if (i < maxAttempts - 1) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    }
+  }
+  console.log('Backend not ready after max attempts, continuing anyway...');
+  return false;
+}
+
 // App event handlers
 app.whenReady().then(async () => {
   // Start backend server
@@ -456,12 +521,13 @@ app.whenReady().then(async () => {
     await startViteDevServer();
   }
 
-  // Wait a bit for backend to start
-  setTimeout(() => {
-    createWindow();
-    createTray();
-    createMenu();
-  }, 2000);
+  // Wait for backend to be ready
+  console.log('Waiting for backend to be ready...');
+  await waitForBackend();
+
+  createWindow();
+  createTray();
+  createMenu();
 });
 
 app.on('window-all-closed', () => {

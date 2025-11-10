@@ -26,7 +26,7 @@ import {
   CloudSync,
   FiberManualRecord
 } from '@mui/icons-material';
-import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
+import { HashRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import Dashboard from './components/Dashboard';
@@ -37,7 +37,17 @@ import SettingsPage from './components/SettingsPage';
 import { wsClient, apiClient } from './api/client';
 
 const drawerWidth = 240;
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      refetchOnWindowFocus: true,
+      refetchOnMount: true,
+      refetchOnReconnect: true,
+      retry: 3,
+      staleTime: 0, // Always consider data stale
+    },
+  },
+});
 
 // Create theme with nice colors
 const theme = createTheme({
@@ -225,8 +235,15 @@ function AppContent() {
     checkDaemon();
     const interval = setInterval(checkDaemon, 30000); // Check every 30 seconds instead of 5
 
+    // Force initial query refresh after backend is ready
+    const initialRefreshTimer = setTimeout(() => {
+      console.log('Triggering initial data refresh...');
+      queryClient.refetchQueries();
+    }, 2500);
+
     return () => {
       clearInterval(interval);
+      clearTimeout(initialRefreshTimer);
       wsClient.disconnect();
     };
   }, []);
