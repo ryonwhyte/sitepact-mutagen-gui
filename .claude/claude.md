@@ -1,4 +1,4 @@
-# Sitepact Mutagen GUI
+# Mutagen Sync Manager
 
 ## Project Overview
 
@@ -51,7 +51,7 @@ This is a desktop application for managing Mutagen file synchronization sessions
 ## Project Structure
 
 ```
-sitepact-mutagen-gui/
+mutagen-sync-manager/
 ├── frontend/
 │   ├── src/
 │   │   ├── components/      # React components
@@ -135,7 +135,7 @@ The app automatically:
 
 SSH config format:
 ```
-# Mutagen GUI: {connection-name}
+# Mutagen Sync Manager: {connection-name}
 Host mutagen-{connection-name}
   HostName {host}
   User {username}

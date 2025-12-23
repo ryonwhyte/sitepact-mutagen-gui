@@ -1,4 +1,4 @@
-# Sitepact Mutagen GUI
+# Mutagen Sync Manager
 
 A modern desktop application for managing Mutagen file synchronization sessions with an intuitive graphical interface.
 
@@ -9,7 +9,7 @@ A modern desktop application for managing Mutagen file synchronization sessions 
 
 ## Overview
 
-Sitepact Mutagen GUI provides a user-friendly desktop interface for [Mutagen](https://mutagen.io/), a high-performance file synchronization tool. It simplifies the process of setting up and managing file sync sessions between your local machine and remote servers.
+Mutagen Sync Manager provides a user-friendly desktop interface for [Mutagen](https://mutagen.io/), a high-performance file synchronization tool. It simplifies the process of setting up and managing file sync sessions between your local machine and remote servers.
 
 ## ✨ Key Features
 
@@ -52,8 +52,8 @@ Sitepact Mutagen GUI provides a user-friendly desktop interface for [Mutagen](ht
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/sitepact-mutagen-gui.git
-cd sitepact-mutagen-gui
+git clone https://github.com/sitepact/mutagen-sync-manager.git
+cd mutagen-sync-manager
 ```
 
 2. Run the setup script:
@@ -148,7 +148,7 @@ The application provides advanced SSH key handling:
 **SSH Config Integration:**
 Each connection creates an entry like:
 ```
-# Mutagen GUI: connection-name
+# Mutagen Sync Manager: connection-name
 Host mutagen-connection-name
   HostName example.com
   User username
@@ -171,7 +171,7 @@ This ensures reliable authentication without manual SSH configuration.
 ### Project Structure
 
 ```
-sitepact-mutagen-gui/
+mutagen-sync-manager/
 ├── backend/
 │   ├── main.py              # FastAPI server & Mutagen wrapper
 │   ├── requirements.txt     # Python dependencies
@@ -323,8 +323,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-For issues, questions, or feature requests, please [open an issue](https://github.com/yourusername/sitepact-mutagen-gui/issues) on GitHub.
+For issues, questions, or feature requests, please [open an issue](https://github.com/sitepact/mutagen-sync-manager/issues) on GitHub.
 
 ---
 
-**Note**: This application requires Mutagen to be installed separately. Sitepact Mutagen GUI provides a graphical interface for Mutagen's functionality.
+**Note**: This application requires Mutagen to be installed separately. Mutagen Sync Manager provides a graphical interface for Mutagen's functionality.

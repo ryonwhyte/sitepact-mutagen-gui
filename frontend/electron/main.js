@@ -38,7 +38,7 @@ function startBackend() {
   } else {
     // In production, create venv in user's home directory to avoid permission issues
     const os = require('os');
-    const venvDir = path.join(os.homedir(), '.sitepact-mutagen-gui', 'venv');
+    const venvDir = path.join(os.homedir(), '.mutagen-sync-manager', 'venv');
     const venvPython = path.join(venvDir, 'bin', 'python');
 
     if (fs.existsSync(venvPython)) {
@@ -167,7 +167,7 @@ function createWindow() {
     // Show notification that app is ready (skip icon if not available)
     if (Notification.isSupported()) {
       const notificationOptions = {
-        title: 'Mutagen GUI',
+        title: 'Mutagen Sync Manager',
         body: 'Application is ready'
       };
       const iconPath = path.join(__dirname, '..', 'public', 'icon.png');
@@ -198,7 +198,7 @@ function createWindow() {
       // Show tray balloon on first minimize
       if (tray && !tray.balloonShown) {
         tray.displayBalloon({
-          title: 'Mutagen GUI',
+          title: 'Mutagen Sync Manager',
           content: 'Application minimized to tray. Click the tray icon to restore.'
         });
         tray.balloonShown = true;
@@ -283,7 +283,7 @@ function createTray() {
     }
   ]);
 
-  tray.setToolTip('Mutagen GUI - File Synchronization Manager');
+  tray.setToolTip('Mutagen Sync Manager');
   tray.setContextMenu(contextMenu);
 
   // Restore window on tray icon click
@@ -411,7 +411,7 @@ function createMenu() {
         {
           label: 'Report Issue',
           click: () => {
-            shell.openExternal('https://github.com/yourusername/mutagen-gui/issues');
+            shell.openExternal('https://github.com/sitepact/mutagen-sync-manager/issues');
           }
         },
         { type: 'separator' },
@@ -420,8 +420,8 @@ function createMenu() {
           click: () => {
             dialog.showMessageBox(mainWindow, {
               type: 'info',
-              title: 'About Mutagen GUI',
-              message: 'Mutagen GUI',
+              title: 'About Mutagen Sync Manager',
+              message: 'Mutagen Sync Manager',
               detail: 'Version 1.0.0\n\nA modern desktop application for managing Mutagen file synchronization sessions.\n\nBuilt with Electron, React, and FastAPI',
               buttons: ['OK'],
               icon: path.join(__dirname, '..', 'public', 'icon.png')

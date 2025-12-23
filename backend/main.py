@@ -1,5 +1,5 @@
 """
-Mutagen GUI Backend API
+Mutagen Sync Manager Backend API
 FastAPI application for managing Mutagen sync sessions
 """
 
@@ -27,7 +27,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
-app = FastAPI(title="Mutagen GUI API", version="1.0.0")
+app = FastAPI(title="Mutagen Sync Manager API", version="1.0.0")
 
 # Configure CORS
 app.add_middleware(
@@ -316,7 +316,7 @@ class MutagenManager:
                     existing_config = ssh_config_path.read_text()
 
                 # Check if entry already exists
-                entry_marker = f"# Mutagen GUI: {config.name}"
+                entry_marker = f"# Mutagen Sync Manager: {config.name}"
                 if entry_marker not in existing_config:
                     # Append new entry
                     new_entry = f"\n{entry_marker}\nHost {host_alias}\n"
@@ -425,7 +425,7 @@ manager = ConnectionManager()
 @app.get("/")
 async def root():
     """Root endpoint"""
-    return {"message": "Mutagen GUI API", "version": "1.0.0"}
+    return {"message": "Mutagen Sync Manager API", "version": "1.0.0"}
 
 @app.get("/api/ssh-keys")
 async def list_ssh_keys() -> List[SSHKey]:

@@ -95,7 +95,7 @@ function Navigation({ mobileOpen, setMobileOpen, daemonStatus }: NavigationProps
     <div>
       <Toolbar>
         <Typography variant="h6" noWrap component="div">
-          Mutagen GUI
+          Mutagen Sync Manager
         </Typography>
       </Toolbar>
       <Box sx={{ p: 2 }}>

@@ -1,14 +1,14 @@
 {
-  "name": "sitepact-mutagen-gui",
+  "name": "mutagen-sync-manager",
   "private": true,
   "version": "1.1.6",
-  "description": "Sitepact Mutagen GUI - A modern desktop application for managing Mutagen file synchronization",
+  "description": "Mutagen Sync Manager - A modern desktop application for managing Mutagen file synchronization",
   "main": "electron/main.js",
   "author": {
-    "name": "Sitepact - Ryon Whyte",
+    "name": "Ryon Whyte",
     "email": "contact@sitepact.com"
   },
-  "homepage": "https://github.com/sitepact/sitepact-mutagen-gui",
+  "homepage": "https://github.com/sitepact/mutagen-sync-manager",
   "license": "MIT",
   "scripts": {
     "dev": "vite",
@@ -24,8 +24,8 @@
     "dist:win": "npm run build && electron-builder --win"
   },
   "build": {
-    "appId": "com.sitepact.mutagengui",
-    "productName": "Sitepact Mutagen GUI",
+    "appId": "com.mutagensyncmanager.app",
+    "productName": "Mutagen Sync Manager",
     "directories": {
       "output": "../builds"
     },

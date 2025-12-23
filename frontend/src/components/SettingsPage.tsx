@@ -55,7 +55,7 @@ const SettingsPage: React.FC = () => {
 
   const handleSave = () => {
     // In a real app, this would save to backend
-    localStorage.setItem('mutagen-gui-settings', JSON.stringify(settings));
+    localStorage.setItem('mutagen-sync-manager-settings', JSON.stringify(settings));
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
   };
@@ -224,7 +224,7 @@ const SettingsPage: React.FC = () => {
             <Divider sx={{ mb: 2 }} />
 
             <Typography variant="body2" color="text.secondary" paragraph>
-              Mutagen GUI v1.0.0
+              Mutagen Sync Manager v1.0.0
             </Typography>
             <Typography variant="body2" color="text.secondary" paragraph>
               A modern interface for managing Mutagen file synchronization sessions.

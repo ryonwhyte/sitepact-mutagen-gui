@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Mutagen GUI Desktop Application Launcher
+# Mutagen Sync Manager Desktop Application Launcher
 
 # Load nvm if available
 if [ -s "$HOME/.nvm/nvm.sh" ]; then
@@ -8,9 +8,9 @@ if [ -s "$HOME/.nvm/nvm.sh" ]; then
     nvm use default >/dev/null 2>&1
 fi
 
-echo "====================================="
-echo "Starting Mutagen GUI Desktop App"
-echo "====================================="
+echo "========================================"
+echo "Starting Mutagen Sync Manager"
+echo "========================================"
 echo "Using Node.js $(node --version)"
 
 # Check if mutagen is installed
