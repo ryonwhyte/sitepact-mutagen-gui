@@ -478,11 +478,21 @@ async def list_sessions():
     try:
         # Ensure daemon is running first
         daemon_status = await mutagen_mgr.daemon_status()
-        if daemon_status != "Running":
+        if daemon_status != "running":  # Fixed: was "Running" but daemon_status() returns lowercase
             logger.info("Daemon not running, starting it...")
             await mutagen_mgr.start_daemon()
-            # Give daemon a moment to start
-            await asyncio.sleep(1)
+            # Give daemon more time to start and initialize sessions
+            # On first boot after restart, this can take several seconds
+            await asyncio.sleep(3)
+
+            # Retry fetching sessions with backoff if initially empty
+            for attempt in range(3):
+                sessions = await mutagen_mgr.list_sessions()
+                if sessions:
+                    return sessions
+                logger.info(f"No sessions found after daemon start, retry {attempt + 1}/3...")
+                await asyncio.sleep(2)
+            return sessions  # Return whatever we got after retries
 
         sessions = await mutagen_mgr.list_sessions()
         return sessions

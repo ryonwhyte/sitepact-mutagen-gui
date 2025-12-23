@@ -52,8 +52,8 @@ Mutagen Sync Manager provides a user-friendly desktop interface for [Mutagen](ht
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/sitepact/mutagen-sync-manager.git
-cd mutagen-sync-manager
+git clone https://github.com/ryonwhyte/sitepact-mutagen-gui.git
+cd sitepact-mutagen-gui
 ```
 
 2. Run the setup script:
@@ -323,7 +323,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-For issues, questions, or feature requests, please [open an issue](https://github.com/sitepact/mutagen-sync-manager/issues) on GitHub.
+For issues, questions, or feature requests, please [open an issue](https://github.com/ryonwhyte/sitepact-mutagen-gui/issues) on GitHub.
 
 ---
 

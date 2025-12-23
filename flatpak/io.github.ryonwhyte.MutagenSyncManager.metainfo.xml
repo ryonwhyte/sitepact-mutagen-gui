@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.ryonwhyte.MutagenSyncManager</id>
+  <name>Mutagen Sync Manager</name>
+  <summary>A modern desktop app for managing Mutagen file synchronization</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="io.github.ryonwhyte">
+    <name>Ryon Whyte</name>
+  </developer>
+
+  <description>
+    <p>
+      Mutagen Sync Manager is a modern desktop application for managing Mutagen file
+      synchronization sessions with an intuitive graphical interface.
+    </p>
+    <p>
+      Seamlessly sync files between your local machine and remote servers via SSH.
+    </p>
+    <p>Key Features:</p>
+    <ul>
+      <li>Easy Connection Setup - Configure SSH connections with automatic key management</li>
+      <li>Real-time Monitoring - Watch sync status, conflicts, and connection health</li>
+      <li>Multiple Sync Modes - Two-way sync, one-way-safe, and one-way-replica modes</li>
+      <li>Conflict Resolution - Visual interface for resolving file conflicts</li>
+      <li>Session Management - Pause, resume, flush, and terminate sync sessions</li>
+      <li>Import/Export - Backup and restore your connection configurations</li>
+    </ul>
+    <p>
+      Note: Mutagen CLI must be installed separately on your system.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">io.github.ryonwhyte.MutagenSyncManager.desktop</launchable>
+
+  <url type="homepage">https://github.com/ryonwhyte/sitepact-mutagen-gui</url>
+  <url type="bugtracker">https://github.com/ryonwhyte/sitepact-mutagen-gui/issues</url>
+
+  <screenshots>
+    <screenshot type="default">
+      <caption>Dashboard showing active sync sessions</caption>
+      <image>https://raw.githubusercontent.com/ryonwhyte/sitepact-mutagen-gui/main/screenshots/dashboard.png</image>
+    </screenshot>
+  </screenshots>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="1.2.0" date="2024-12-23">
+      <description>
+        <p>Initial Flathub release</p>
+        <ul>
+          <li>Renamed to Mutagen Sync Manager</li>
+          <li>Fixed daemon startup detection bug</li>
+          <li>Added pulsing status indicator</li>
+          <li>Improved initial session loading with retry logic</li>
+          <li>Added custom app icons</li>
+          <li>Updated Help menu with documentation links</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+
+  <categories>
+    <category>Development</category>
+    <category>Utility</category>
+  </categories>
+
+  <keywords>
+    <keyword>sync</keyword>
+    <keyword>file</keyword>
+    <keyword>mutagen</keyword>
+    <keyword>ssh</keyword>
+    <keyword>remote</keyword>
+    <keyword>synchronization</keyword>
+  </keywords>
+
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+</component>

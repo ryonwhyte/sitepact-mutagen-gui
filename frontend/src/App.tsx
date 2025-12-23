@@ -102,15 +102,27 @@ function Navigation({ mobileOpen, setMobileOpen, daemonStatus }: NavigationProps
         <Chip
           icon={
             <FiberManualRecord
-              sx={{
-                color: daemonStatus === 'running' ? '#10b981' : '#ef4444',
-                fontSize: 12,
-              }}
+              htmlColor={daemonStatus === 'running' ? '#10b981' : '#ef4444'}
+              sx={{ fontSize: 14 }}
             />
           }
           label={`Daemon: ${daemonStatus}`}
           size="small"
           variant="outlined"
+          sx={{
+            '& .MuiChip-icon': {
+              color: daemonStatus === 'running' ? '#10b981' : '#ef4444',
+              animation: daemonStatus === 'running' ? 'pulse 2s ease-in-out infinite' : 'none',
+              '@keyframes pulse': {
+                '0%, 100%': {
+                  opacity: 1,
+                },
+                '50%': {
+                  opacity: 0.4,
+                },
+              },
+            }
+          }}
         />
       </Box>
       <List>
@@ -236,14 +248,21 @@ function AppContent() {
     const interval = setInterval(checkDaemon, 30000); // Check every 30 seconds instead of 5
 
     // Force initial query refresh after backend is ready
-    const initialRefreshTimer = setTimeout(() => {
-      console.log('Triggering initial data refresh...');
-      queryClient.refetchQueries();
-    }, 2500);
+    // Use multiple retries with increasing delays to handle daemon startup after system reboot
+    const refreshTimers: NodeJS.Timeout[] = [];
+    const refreshDelays = [3000, 6000, 10000]; // Retry at 3s, 6s, and 10s
+
+    refreshDelays.forEach((delay, index) => {
+      const timer = setTimeout(() => {
+        console.log(`Triggering initial data refresh (attempt ${index + 1}/${refreshDelays.length})...`);
+        queryClient.refetchQueries();
+      }, delay);
+      refreshTimers.push(timer);
+    });
 
     return () => {
       clearInterval(interval);
-      clearTimeout(initialRefreshTimer);
+      refreshTimers.forEach(timer => clearTimeout(timer));
       wsClient.disconnect();
     };
   }, []);

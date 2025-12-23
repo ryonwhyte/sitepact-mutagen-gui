@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Mutagen Sync Manager
+Comment=A modern desktop app for managing Mutagen file synchronization
+Exec=run.sh %U
+Icon=io.github.ryonwhyte.MutagenSyncManager
+Terminal=false
+Type=Application
+Categories=Development;Utility;
+Keywords=sync;file;mutagen;ssh;remote;
+StartupWMClass=mutagen-sync-manager

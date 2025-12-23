@@ -1,0 +1,59 @@
+id: io.github.ryonwhyte.MutagenSyncManager
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+base: org.electronjs.Electron2.BaseApp
+base-version: '24.08'
+
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.node22
+
+command: run.sh
+
+finish-args:
+  - --share=ipc
+  - --device=dri
+  - --socket=x11
+  - --socket=wayland
+  - --socket=pulseaudio
+  - --share=network
+  - --filesystem=home
+  - --filesystem=~/.ssh:ro
+  - --env=ELECTRON_TRASH=gio
+  - --talk-name=org.freedesktop.Notifications
+
+build-options:
+  append-path: /usr/lib/sdk/node22/bin
+  env:
+    NPM_CONFIG_LOGLEVEL: info
+    XDG_CACHE_HOME: /run/build/MutagenSyncManager/flatpak-node/cache
+    npm_config_cache: /run/build/MutagenSyncManager/flatpak-node/npm-cache
+    npm_config_nodedir: /usr/lib/sdk/node22
+    npm_config_offline: 'true'
+
+modules:
+  - name: mutagen-sync-manager
+    buildsystem: simple
+    subdir: main
+    sources:
+      - type: archive
+        url: https://github.com/ryonwhyte/sitepact-mutagen-gui/archive/refs/tags/v1.2.0.tar.gz
+        sha256: PLACEHOLDER_SHA256
+        dest: main
+      - generated-sources.json
+      - type: script
+        dest-filename: run.sh
+        commands:
+          - zypak-wrapper /app/main/mutagen-sync-manager "$@"
+    build-commands:
+      - cd frontend && npm install --offline
+      - |
+        cd frontend
+        . ../flatpak-node/electron-builder-arch-args.sh
+        npm run build
+        npx electron-builder $ELECTRON_BUILDER_ARCH_ARGS --linux --dir
+      - cp -a frontend/dist/linux*unpacked /app/main
+      - install -Dm755 -t /app/bin/ ../run.sh
+      - install -Dm644 frontend/public/icon.png /app/share/icons/hicolor/512x512/apps/io.github.ryonwhyte.MutagenSyncManager.png
+      - install -Dm644 io.github.ryonwhyte.MutagenSyncManager.desktop /app/share/applications/io.github.ryonwhyte.MutagenSyncManager.desktop
+      - install -Dm644 io.github.ryonwhyte.MutagenSyncManager.metainfo.xml /app/share/metainfo/io.github.ryonwhyte.MutagenSyncManager.metainfo.xml

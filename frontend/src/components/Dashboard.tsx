@@ -52,16 +52,29 @@ const Dashboard: React.FC = () => {
   });
 
   // Auto-retry on mount if data is empty
+  // This handles the case where the daemon is still starting up after system reboot
+  const [retryCount, setRetryCount] = React.useState(0);
+  const maxRetries = 5;
+
   React.useEffect(() => {
-    if (!isLoading && sessions.length === 0 && !error) {
+    if (!isLoading && sessions.length === 0 && !error && retryCount < maxRetries) {
+      const delay = Math.min(2000 * (retryCount + 1), 8000); // Increasing delay: 2s, 4s, 6s, 8s, 8s
       const timer = setTimeout(() => {
-        console.log('Auto-retrying dashboard data fetch...');
+        console.log(`Auto-retrying dashboard data fetch (attempt ${retryCount + 1}/${maxRetries})...`);
         refetch();
         refetchDaemon();
-      }, 2000);
+        setRetryCount(prev => prev + 1);
+      }, delay);
       return () => clearTimeout(timer);
     }
-  }, [isLoading, sessions.length, error, refetch, refetchDaemon]);
+  }, [isLoading, sessions.length, error, refetch, refetchDaemon, retryCount]);
+
+  // Reset retry count when sessions are found
+  React.useEffect(() => {
+    if (sessions.length > 0) {
+      setRetryCount(0);
+    }
+  }, [sessions.length]);
 
   // Session action mutation
   const actionMutation = useMutation({
@@ -315,10 +328,10 @@ const Dashboard: React.FC = () => {
           <Grid item xs={12}>
             <Paper sx={{ p: 3, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
               <Typography variant="h5" sx={{ color: 'white', mb: 2 }}>
-                Welcome to Mutagen GUI! 🚀
+                Welcome to Mutagen Sync Manager!
               </Typography>
               <Typography variant="body1" sx={{ color: 'white', mb: 3 }}>
-                Mutagen GUI helps you sync files between your local machine and remote servers with ease.
+                Mutagen Sync Manager helps you sync files between your local machine and remote servers with ease.
               </Typography>
 
               <Grid container spacing={3}>

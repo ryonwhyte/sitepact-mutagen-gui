@@ -353,18 +353,6 @@ function createMenu() {
       ]
     },
     {
-      label: 'Edit',
-      submenu: [
-        { role: 'undo' },
-        { role: 'redo' },
-        { type: 'separator' },
-        { role: 'cut' },
-        { role: 'copy' },
-        { role: 'paste' },
-        { role: 'selectAll' }
-      ]
-    },
-    {
       label: 'View',
       submenu: [
         {
@@ -405,13 +393,26 @@ function createMenu() {
         {
           label: 'Documentation',
           click: () => {
-            shell.openExternal('https://mutagen.io/documentation');
+            shell.openExternal('https://github.com/ryonwhyte/sitepact-mutagen-gui');
           }
         },
         {
+          label: 'Mutagen Docs',
+          click: () => {
+            shell.openExternal('https://mutagen.io/documentation/introduction/');
+          }
+        },
+        { type: 'separator' },
+        {
           label: 'Report Issue',
           click: () => {
-            shell.openExternal('https://github.com/sitepact/mutagen-sync-manager/issues');
+            shell.openExternal('https://github.com/ryonwhyte/sitepact-mutagen-gui/issues');
+          }
+        },
+        {
+          label: 'GitHub Repository',
+          click: () => {
+            shell.openExternal('https://github.com/ryonwhyte/sitepact-mutagen-gui');
           }
         },
         { type: 'separator' },
@@ -421,8 +422,8 @@ function createMenu() {
             dialog.showMessageBox(mainWindow, {
               type: 'info',
               title: 'About Mutagen Sync Manager',
-              message: 'Mutagen Sync Manager',
-              detail: 'Version 1.0.0\n\nA modern desktop application for managing Mutagen file synchronization sessions.\n\nBuilt with Electron, React, and FastAPI',
+              message: 'Mutagen Sync Manager v1.2.0',
+              detail: 'A modern desktop application for managing Mutagen file synchronization sessions.\n\nFeatures:\n• Easy SSH connection management\n• Real-time sync status monitoring\n• Multiple sync modes (two-way, one-way)\n• Conflict resolution\n• Import/Export connections\n\nBuilt with Electron, React, Material-UI, and FastAPI.\n\n© 2024 Ryon Whyte',
               buttons: ['OK'],
               icon: path.join(__dirname, '..', 'public', 'icon.png')
             });
