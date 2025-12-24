@@ -66,3 +66,13 @@ Thumbs.db
 # Test coverage
 coverage/
 .nyc_output/
+
+# Internal documentation (not for repo)
+FLATPAK_BUILD_GUIDE.md
+
+# Flatpak build artifacts
+.flatpak-builder/
+.flatpak-venv/
+build-dir/
+repo/
+*.flatpak
