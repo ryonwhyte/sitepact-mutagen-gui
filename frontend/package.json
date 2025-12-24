@@ -1,14 +1,19 @@
+
 {
   "name": "mutagen-sync-manager",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Mutagen Sync Manager - A modern desktop application for managing Mutagen file synchronization",
   "main": "electron/main.js",
   "author": {
     "name": "Ryon Whyte",
     "email": "developer@sitepact.com"
   },
-  "homepage": "https://github.com/ryonwhyte/sitepact-mutagen-gui",
+  "homepage": "https://sitepactja.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ryonwhyte/sitepact-mutagen-gui"
+  },
   "license": "MIT",
   "scripts": {
     "dev": "vite",
@@ -58,10 +63,21 @@
       "icon": "public/icons/icon.png"
     },
     "snap": {
-      "confinement": "classic",
+      "confinement": "strict",
       "grade": "stable",
-      "summary": "A modern desktop app for managing Mutagen file synchronization",
-      "description": "**Mutagen Sync Manager** is a modern desktop application for managing Mutagen file synchronization sessions with an intuitive graphical interface.\n\n_Seamlessly sync files between your local machine and remote servers via SSH._\n\n**Key Features:**\n\n* **Easy Connection Setup** - Configure SSH connections with automatic key management and host configuration\n* **Real-time Monitoring** - Watch sync status, conflicts, and connection health at a glance\n* **Multiple Sync Modes** - Two-way sync, one-way-safe, and one-way-replica modes\n* **Conflict Resolution** - Visual interface for resolving file conflicts\n* **Session Management** - Pause, resume, flush, and terminate sync sessions\n* **Import/Export** - Backup and restore your connection configurations\n\n**Requirements:**\n\n* Mutagen CLI must be installed separately: https://mutagen.io/documentation/introduction/\n* SSH access to remote servers\n\n**Perfect for:**\n\n* Web developers syncing code to remote servers\n* DevOps engineers managing multiple environments\n* Anyone needing reliable bidirectional file sync over SSH\n\nBuilt with _Electron_, _React_, _Material-UI_, and _FastAPI_.\n\nReport issues: https://github.com/ryonwhyte/sitepact-mutagen-gui/issues"
+      "summary": "A modern desktop app for managing Mutagen file synchronization - by SitepactJA",
+      "description": "**Mutagen Sync Manager** is a modern desktop application for managing Mutagen file synchronization sessions with an intuitive graphical interface.\n\n_Developed by SitepactJA (https://sitepactja.com) to streamline plugin development on live server environments._\n\n_Seamlessly sync files between your local machine and remote servers via SSH._\n\n**Key Features:**\n\n* **Easy Connection Setup** - Configure SSH connections with automatic key management and host configuration\n* **Real-time Monitoring** - Watch sync status, conflicts, and connection health at a glance\n* **Multiple Sync Modes** - Two-way sync, one-way-safe, and one-way-replica modes\n* **Conflict Resolution** - Visual interface for resolving file conflicts\n* **Session Management** - Pause, resume, flush, and terminate sync sessions\n* **Import/Export** - Backup and restore your connection configurations\n\n**Requirements:**\n\n* Mutagen CLI must be installed separately: https://mutagen.io/documentation/introduction/\n* SSH access to remote servers\n\n**Perfect for:**\n\n* Web developers syncing code to remote servers\n* DevOps engineers managing multiple environments\n* Anyone needing reliable bidirectional file sync over SSH\n\nBuilt with _Electron_, _React_, _Material-UI_, and _FastAPI_.\n\nReport issues: https://github.com/ryonwhyte/sitepact-mutagen-gui/issues",
+      "plugs": [
+        "home",
+        "network",
+        "network-bind",
+        "desktop",
+        "desktop-legacy",
+        "wayland",
+        "x11",
+        "unity7",
+        "browser-support"
+      ]
     },
     "mac": {
       "target": "dmg",

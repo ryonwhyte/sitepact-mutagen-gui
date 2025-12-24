@@ -7,9 +7,15 @@ A modern desktop application for managing Mutagen file synchronization sessions 
 ![Node](https://img.shields.io/badge/node-%3E%3D22.0.0-green)
 ![Python](https://img.shields.io/badge/python-%3E%3D3.8-blue)
 
+**Developed by [SitepactJA](https://sitepactja.com)**
+
 ## Overview
 
 Mutagen Sync Manager provides a user-friendly desktop interface for [Mutagen](https://mutagen.io/), a high-performance file synchronization tool. It simplifies the process of setting up and managing file sync sessions between your local machine and remote servers.
+
+### Why We Built This
+
+This tool was originally developed by [SitepactJA](https://sitepactja.com) to streamline our plugin development workflow. When developing plugins for live server environments, we needed a reliable way to sync code changes in real-time between our local development machines and remote servers. Rather than manually uploading files or using cumbersome FTP clients, Mutagen Sync Manager provides seamless bidirectional synchronization that keeps local and remote files in perfect sync as you code.
 
 ## ✨ Key Features
 

@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>io.github.ryonwhyte.MutagenSyncManager</id>
+  <id>com.sitepactja.MutagenSyncManager</id>
   <name>Mutagen Sync Manager</name>
   <summary>A modern desktop app for managing Mutagen file synchronization</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
-  <developer id="io.github.ryonwhyte">
-    <name>Ryon Whyte</name>
+  <developer id="com.sitepactja">
+    <name>SitepactJA</name>
   </developer>
 
   <description>
@@ -15,7 +15,9 @@
       synchronization sessions with an intuitive graphical interface.
     </p>
     <p>
-      Seamlessly sync files between your local machine and remote servers via SSH.
+      Originally developed by SitepactJA to streamline plugin development workflows on live
+      server environments, this tool enables seamless real-time file synchronization between
+      local development machines and remote servers via SSH.
     </p>
     <p>Key Features:</p>
     <ul>
@@ -27,19 +29,28 @@
       <li>Import/Export - Backup and restore your connection configurations</li>
     </ul>
     <p>
+      Perfect for web developers, plugin developers, and DevOps engineers who need reliable
+      bidirectional file sync over SSH for live server development.
+    </p>
+    <p>
       Note: Mutagen CLI must be installed separately on your system.
     </p>
   </description>
 
-  <launchable type="desktop-id">io.github.ryonwhyte.MutagenSyncManager.desktop</launchable>
+  <launchable type="desktop-id">com.sitepactja.MutagenSyncManager.desktop</launchable>
 
-  <url type="homepage">https://github.com/ryonwhyte/sitepact-mutagen-gui</url>
+  <url type="homepage">https://sitepactja.com</url>
   <url type="bugtracker">https://github.com/ryonwhyte/sitepact-mutagen-gui/issues</url>
+  <url type="vcs-browser">https://github.com/ryonwhyte/sitepact-mutagen-gui</url>
 
   <screenshots>
     <screenshot type="default">
       <caption>Dashboard showing active sync sessions</caption>
-      <image>https://raw.githubusercontent.com/ryonwhyte/sitepact-mutagen-gui/main/screenshots/dashboard.png</image>
+      <image>https://raw.githubusercontent.com/ryonwhyte/sitepact-mutagen-gui/main/screenshots/2025-12-23_11-52.png</image>
+    </screenshot>
+    <screenshot>
+      <caption>Connection management interface</caption>
+      <image>https://raw.githubusercontent.com/ryonwhyte/sitepact-mutagen-gui/main/screenshots/2025-12-23_12-24.png</image>
     </screenshot>
   </screenshots>
 
@@ -73,6 +84,9 @@
     <keyword>ssh</keyword>
     <keyword>remote</keyword>
     <keyword>synchronization</keyword>
+    <keyword>sitepact</keyword>
+    <keyword>plugin</keyword>
+    <keyword>development</keyword>
   </keywords>
 
   <requires>
