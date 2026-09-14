@@ -15,6 +15,8 @@ export interface Connection {
   ssh_key_path?: string;
   sync_mode: string;
   tags: string[];
+  ignores?: string[];
+  ignore_vcs?: boolean;
   is_favorite?: boolean;
   created_at?: string;
   last_used?: string;
