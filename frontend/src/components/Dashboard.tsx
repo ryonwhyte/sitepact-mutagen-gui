@@ -13,7 +13,6 @@ import {
 } from '@mui/material';
 import {
   CloudSync,
-  Storage,
   CheckCircle,
   Error,
   Warning,
@@ -29,52 +28,27 @@ const Dashboard: React.FC = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
-  // Fetch sessions - with initial retry on mount
-  const { data: sessions = [], isLoading, error, refetch } = useQuery({
+  // Fetch sessions
+  const { data: sessions = [], isLoading } = useQuery({
     queryKey: ['sessions'],
     queryFn: () => apiClient.listSessions(),
-    refetchInterval: 30000, // Poll every 30 seconds instead of 5
-    retry: 5, // Retry failed requests up to 5 times on initial load
-    retryDelay: (attemptIndex) => Math.min(500 * 2 ** attemptIndex, 5000), // Faster initial retries
-    staleTime: 0, // Always fetch fresh data
-    refetchOnMount: true, // Always refetch when component mounts
-  });
-
-  // Fetch daemon status
-  const { data: daemonStatus, refetch: refetchDaemon } = useQuery({
-    queryKey: ['daemon-status'],
-    queryFn: () => apiClient.getDaemonStatus(),
-    refetchInterval: 30000, // Poll every 30 seconds instead of 5
-    retry: 5,
-    retryDelay: (attemptIndex) => Math.min(500 * 2 ** attemptIndex, 5000),
-    staleTime: 0,
+    refetchInterval: 30000, // Poll every 30 seconds
+    retry: 2, // Reduced retries - backend handles daemon startup
+    retryDelay: 1000,
+    staleTime: 5000,
     refetchOnMount: true,
   });
 
-  // Auto-retry on mount if data is empty
-  // This handles the case where the daemon is still starting up after system reboot
-  const [retryCount, setRetryCount] = React.useState(0);
-  const maxRetries = 5;
-
-  React.useEffect(() => {
-    if (!isLoading && sessions.length === 0 && !error && retryCount < maxRetries) {
-      const delay = Math.min(2000 * (retryCount + 1), 8000); // Increasing delay: 2s, 4s, 6s, 8s, 8s
-      const timer = setTimeout(() => {
-        console.log(`Auto-retrying dashboard data fetch (attempt ${retryCount + 1}/${maxRetries})...`);
-        refetch();
-        refetchDaemon();
-        setRetryCount(prev => prev + 1);
-      }, delay);
-      return () => clearTimeout(timer);
-    }
-  }, [isLoading, sessions.length, error, refetch, refetchDaemon, retryCount]);
-
-  // Reset retry count when sessions are found
-  React.useEffect(() => {
-    if (sessions.length > 0) {
-      setRetryCount(0);
-    }
-  }, [sessions.length]);
+  // Fetch daemon status
+  const { data: daemonStatus } = useQuery({
+    queryKey: ['daemon-status'],
+    queryFn: () => apiClient.getDaemonStatus(),
+    refetchInterval: 30000,
+    retry: 2,
+    retryDelay: 1000,
+    staleTime: 5000,
+    refetchOnMount: true,
+  });
 
   // Session action mutation
   const actionMutation = useMutation({

@@ -27,43 +27,35 @@ if (isDev) {
 
 // Backend management
 function startBackend() {
-  const backendPath = isDev
-    ? path.join(__dirname, '..', '..', 'backend', 'main.py')
-    : path.join(process.resourcesPath, 'backend', 'main.py');
-
-  // Try to use venv first, install if needed, fallback to system python
-  let pythonPath;
   if (isDev) {
-    pythonPath = path.join(__dirname, '..', '..', 'backend', 'venv', 'bin', 'python');
+    // Development: Use Python with venv
+    const backendPath = path.join(__dirname, '..', '..', 'backend', 'main.py');
+    const pythonPath = path.join(__dirname, '..', '..', 'backend', 'venv', 'bin', 'python');
+
+    console.log('Starting backend in development mode...');
+    backendProcess = spawn(pythonPath, [backendPath]);
   } else {
-    // In production, create venv in user's home directory to avoid permission issues
-    const os = require('os');
-    const venvDir = path.join(os.homedir(), '.mutagen-sync-manager', 'venv');
-    const venvPython = path.join(venvDir, 'bin', 'python');
+    // Production: Use bundled executable (PyInstaller compiled)
+    const backendPath = path.join(process.resourcesPath, 'backend', 'backend-server');
 
-    if (fs.existsSync(venvPython)) {
-      pythonPath = venvPython;
-    } else {
-      // Try to create venv on first run
-      console.log('Setting up Python environment on first run...');
-      try {
-        const { execSync } = require('child_process');
-        // Create parent directory first
-        fs.mkdirSync(path.dirname(venvDir), { recursive: true });
-        execSync(`python3 -m venv "${venvDir}"`, { stdio: 'inherit' });
-        execSync(`"${venvPython}" -m pip install --quiet -r "${backendPath.replace('main.py', 'requirements.txt')}"`, { stdio: 'inherit' });
-        pythonPath = venvPython;
-        console.log('Python environment setup complete!');
-      } catch (error) {
-        console.error('Failed to setup Python environment:', error);
-        console.log('Falling back to system Python. You may need to install dependencies manually:');
-        console.log(`  pip3 install -r "${backendPath.replace('main.py', 'requirements.txt')}"`);
-        pythonPath = 'python3';
-      }
+    console.log('Starting bundled backend server:', backendPath);
+
+    if (!fs.existsSync(backendPath)) {
+      console.error('Backend executable not found:', backendPath);
+      return;
     }
-  }
 
-  backendProcess = spawn(pythonPath, [backendPath]);
+    // Make sure it's executable
+    try {
+      fs.chmodSync(backendPath, 0o755);
+    } catch (e) {
+      console.log('Could not chmod backend (may already be executable)');
+    }
+
+    backendProcess = spawn(backendPath, [], {
+      env: { ...process.env }
+    });
+  }
 
   backendProcess.stdout.on('data', (data) => {
     console.log(`Backend: ${data}`);
@@ -422,8 +414,8 @@ function createMenu() {
             dialog.showMessageBox(mainWindow, {
               type: 'info',
               title: 'About Mutagen Sync Manager',
-              message: 'Mutagen Sync Manager v1.2.0',
-              detail: 'A modern desktop application for managing Mutagen file synchronization sessions.\n\nFeatures:\n• Easy SSH connection management\n• Real-time sync status monitoring\n• Multiple sync modes (two-way, one-way)\n• Conflict resolution\n• Import/Export connections\n\nBuilt with Electron, React, Material-UI, and FastAPI.\n\n© 2024 Ryon Whyte',
+              message: 'Mutagen Sync Manager v1.3.0',
+              detail: 'A modern desktop application for managing Mutagen file synchronization sessions.\n\nFeatures:\n- Easy SSH connection management\n- Real-time sync status monitoring\n- Multiple sync modes (two-way, one-way)\n- Conflict resolution\n- Import/Export connections\n\nBuilt with Electron, React, Material-UI, and FastAPI.\n\nDeveloped by Sitepact\nhttps://sitepact.com',
               buttons: ['OK'],
               icon: path.join(__dirname, '..', 'public', 'icon.png')
             });

@@ -16,6 +16,9 @@ build/
 backend/venv/
 backend/*.db
 backend/.env
+backend/dist/
+backend/build/
+backend/*.spec
 
 # Node
 node_modules/
@@ -29,9 +32,11 @@ frontend/dist/
 frontend/dist-electron/
 frontend/build/
 
-# Builds (too large for GitHub)
-builds/
-!builds/README.md
+# Releases (too large for GitHub)
+releases/
+
+# Bundled binaries (downloaded during build)
+frontend/resources/
 
 # Electron
 .electron/
