@@ -14,7 +14,9 @@ import {
   Select,
   IconButton,
   InputAdornment,
-  Snackbar
+  Snackbar,
+  FormControlLabel,
+  Switch
 } from '@mui/material';
 import {
   Save,
@@ -27,6 +29,14 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiClient, Connection, SSHKey } from '../api/client';
 import { useNavigate, useParams } from 'react-router-dom';
 import InitialSyncDialog from './InitialSyncDialog';
+
+// Quick-add exclusion presets. Clicking one merges its patterns into the list.
+const IGNORE_PRESETS: { label: string; patterns: string[] }[] = [
+  { label: 'Node', patterns: ['node_modules', 'dist', '.cache'] },
+  { label: 'WordPress theme', patterns: ['node_modules', 'src', 'og', 'pages', 'package.json', 'package-lock.json'] },
+  { label: 'Python', patterns: ['__pycache__', 'venv', '.venv', '*.pyc'] },
+  { label: 'Common junk', patterns: ['.DS_Store', '*.log', '.env*', '.idea', '.vscode'] },
+];
 
 const ConnectionForm: React.FC = () => {
   const navigate = useNavigate();
@@ -49,6 +59,8 @@ const ConnectionForm: React.FC = () => {
     ssh_key_path: '',
     sync_mode: 'two-way-safe',
     tags: [],
+    ignores: [],
+    ignore_vcs: true,
   });
 
   // Fetch SSH keys
@@ -122,6 +134,20 @@ const ConnectionForm: React.FC = () => {
     const updatedTags = tags.filter(tag => tag !== tagToDelete);
     setTags(updatedTags);
     setFormData(prev => ({ ...prev, tags: updatedTags }));
+  };
+
+  const addIgnores = (patterns: string[]) => {
+    setFormData(prev => {
+      const merged = Array.from(new Set([...(prev.ignores || []), ...patterns]));
+      return { ...prev, ignores: merged };
+    });
+  };
+
+  const removeIgnore = (pattern: string) => {
+    setFormData(prev => ({
+      ...prev,
+      ignores: (prev.ignores || []).filter(p => p !== pattern),
+    }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -321,6 +347,13 @@ const ConnectionForm: React.FC = () => {
               />
             </Grid>
 
+            {/* Section: sync options */}
+            <Grid item xs={12}>
+              <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 1 }}>
+                Sync options
+              </Typography>
+            </Grid>
+
             {/* Sync Mode */}
             <Grid item xs={12} md={6}>
               <FormControl fullWidth>
@@ -379,6 +412,73 @@ const ConnectionForm: React.FC = () => {
                   />
                 ))}
               </Box>
+            </Grid>
+
+            {/* Section: exclusions */}
+            <Grid item xs={12}>
+              <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 1 }}>
+                Exclusions
+              </Typography>
+            </Grid>
+
+            {/* Excluded paths (ignores) */}
+            <Grid item xs={12}>
+              <Box mb={1} display="flex" gap={0.5} flexWrap="wrap" alignItems="center">
+                <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
+                  Quick add:
+                </Typography>
+                {IGNORE_PRESETS.map((preset) => (
+                  <Chip
+                    key={preset.label}
+                    label={preset.label}
+                    size="small"
+                    variant="outlined"
+                    icon={<Add />}
+                    onClick={() => addIgnores(preset.patterns)}
+                    sx={{ cursor: 'pointer' }}
+                  />
+                ))}
+              </Box>
+              <TextField
+                fullWidth
+                multiline
+                minRows={3}
+                label="Excluded paths (one per line)"
+                placeholder={"node_modules\n.git\n*.log\n.env*"}
+                value={(formData.ignores || []).join('\n')}
+                onChange={(e) => {
+                  const list = e.target.value
+                    .split('\n')
+                    .map((s) => s.trim())
+                    .filter((s) => s.length > 0);
+                  setFormData((prev) => ({ ...prev, ignores: list }));
+                }}
+                helperText="Paths or globs Mutagen will skip (mutagen --ignore). Kept out of the sync in both directions."
+              />
+              {(formData.ignores || []).length > 0 && (
+                <Box mt={1} display="flex" gap={0.5} flexWrap="wrap">
+                  {(formData.ignores || []).map((pattern) => (
+                    <Chip
+                      key={pattern}
+                      label={pattern}
+                      size="small"
+                      onDelete={() => removeIgnore(pattern)}
+                    />
+                  ))}
+                </Box>
+              )}
+              <FormControlLabel
+                sx={{ mt: 1 }}
+                control={
+                  <Switch
+                    checked={formData.ignore_vcs !== false}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, ignore_vcs: e.target.checked }))
+                    }
+                  />
+                }
+                label="Ignore VCS directories (.git, .svn, ...)"
+              />
             </Grid>
 
             {/* Error Display */}

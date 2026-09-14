@@ -67,8 +67,28 @@ class SavedConnection(Base):
     last_used = Column(DateTime, nullable=True)
     is_favorite = Column(Boolean, default=False)
     tags = Column(Text, nullable=True)  # JSON array of tags
+    ignores = Column(Text, nullable=True)  # JSON array of ignore paths/globs
+    ignore_vcs = Column(Boolean, default=True)  # pass --ignore-vcs to mutagen
 
 Base.metadata.create_all(bind=engine)
+
+def _migrate_add_columns():
+    """create_all does not ALTER existing tables, so add newer columns in place for
+    databases created before they existed. SQLite ADD COLUMN is safe and idempotent here
+    (guarded by a PRAGMA check)."""
+    from sqlalchemy import text
+    wanted = {
+        "ignores": "TEXT",
+        "ignore_vcs": "BOOLEAN DEFAULT 1",
+    }
+    with engine.connect() as conn:
+        existing = {row[1] for row in conn.execute(text("PRAGMA table_info(saved_connections)"))}
+        for col, decl in wanted.items():
+            if col not in existing:
+                conn.execute(text(f"ALTER TABLE saved_connections ADD COLUMN {col} {decl}"))
+        conn.commit()
+
+_migrate_add_columns()
 
 # Pydantic models
 class ConnectionConfig(BaseModel):
@@ -81,6 +101,8 @@ class ConnectionConfig(BaseModel):
     ssh_key_path: Optional[str] = None
     sync_mode: str = "two-way-safe"
     tags: List[str] = []
+    ignores: List[str] = []  # paths/globs excluded from sync (mutagen --ignore)
+    ignore_vcs: bool = True  # exclude VCS dirs like .git (mutagen --ignore-vcs)
     initial_sync_direction: Optional[str] = None  # 'download', 'upload', or 'skip'
 
 class SessionAction(BaseModel):
@@ -119,14 +141,38 @@ class MutagenManager:
         self.active_monitors = {}
 
     def _find_mutagen(self) -> Optional[str]:
-        """Find mutagen binary in PATH"""
-        paths = [
+        """Find mutagen binary - checks bundled location first, then system paths"""
+        # Check for SNAP environment (snap package)
+        snap_path = os.environ.get('SNAP')
+        if snap_path:
+            snap_mutagen = Path(snap_path) / "resources" / "bin" / "mutagen"
+            if snap_mutagen.exists():
+                logger.info(f"Found snap bundled mutagen at: {snap_mutagen}")
+                return str(snap_mutagen)
+
+        # Check for bundled mutagen (AppImage/other)
+        script_dir = Path(__file__).parent
+        bundled_paths = [
+            script_dir.parent / "bin" / "mutagen",  # resources/bin/mutagen
+            script_dir / "bin" / "mutagen",  # Same level bin folder
+            Path("/app/bin/mutagen"),  # Flatpak location
+        ]
+
+        for path in bundled_paths:
+            if path.exists():
+                logger.info(f"Found bundled mutagen at: {path}")
+                return str(path)
+
+        # Fall back to system paths
+        system_paths = [
             "/home/linuxbrew/.linuxbrew/bin/mutagen",
+            "/snap/mutagen-sync-manager/current/resources/bin/mutagen",
             "/usr/local/bin/mutagen",
             "/usr/bin/mutagen"
         ]
-        for path in paths:
+        for path in system_paths:
             if Path(path).exists():
+                logger.info(f"Found system mutagen at: {path}")
                 return path
 
         # Try to find in PATH
@@ -155,6 +201,15 @@ class MutagenManager:
         cmd_env = os.environ.copy()
         if env:
             cmd_env.update(env)
+
+        # For snap/sandboxed environments, set writable data directory
+        # Use SNAP_USER_DATA if available (snap environment), otherwise use home
+        snap_user_data = os.environ.get('SNAP_USER_DATA')
+        if snap_user_data:
+            mutagen_data_dir = Path(snap_user_data) / ".mutagen"
+            mutagen_data_dir.mkdir(parents=True, exist_ok=True)
+            cmd_env['MUTAGEN_DATA_DIRECTORY'] = str(mutagen_data_dir)
+            logger.info(f"Using Mutagen data directory: {mutagen_data_dir}")
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -288,6 +343,14 @@ class MutagenManager:
             "--default-file-mode=0644",
             "--default-directory-mode=0755"
         ]
+
+        # Exclusions. --ignore-vcs drops .git/.svn/etc; each --ignore adds a path or glob.
+        if config.ignore_vcs:
+            args.append("--ignore-vcs")
+        for pattern in config.ignores:
+            pattern = (pattern or "").strip()
+            if pattern:
+                args.append(f"--ignore={pattern}")
 
         # Determine remote URL - will be modified if SSH key is used
         remote_url = None
@@ -478,21 +541,11 @@ async def list_sessions():
     try:
         # Ensure daemon is running first
         daemon_status = await mutagen_mgr.daemon_status()
-        if daemon_status != "running":  # Fixed: was "Running" but daemon_status() returns lowercase
+        if daemon_status != "running":
             logger.info("Daemon not running, starting it...")
             await mutagen_mgr.start_daemon()
-            # Give daemon more time to start and initialize sessions
-            # On first boot after restart, this can take several seconds
-            await asyncio.sleep(3)
-
-            # Retry fetching sessions with backoff if initially empty
-            for attempt in range(3):
-                sessions = await mutagen_mgr.list_sessions()
-                if sessions:
-                    return sessions
-                logger.info(f"No sessions found after daemon start, retry {attempt + 1}/3...")
-                await asyncio.sleep(2)
-            return sessions  # Return whatever we got after retries
+            # Brief wait for daemon to initialize
+            await asyncio.sleep(1)
 
         sessions = await mutagen_mgr.list_sessions()
         return sessions
@@ -522,6 +575,8 @@ async def create_session(config: ConnectionConfig):
                 existing.ssh_key_path = config.ssh_key_path
                 existing.sync_mode = config.sync_mode
                 existing.tags = json.dumps(config.tags) if config.tags else None
+                existing.ignores = json.dumps(config.ignores) if config.ignores else None
+                existing.ignore_vcs = config.ignore_vcs
                 existing.last_used = datetime.now()
             else:
                 # Create new connection
@@ -534,7 +589,9 @@ async def create_session(config: ConnectionConfig):
                     local_path=config.local_path,
                     ssh_key_path=config.ssh_key_path,
                     sync_mode=config.sync_mode,
-                    tags=json.dumps(config.tags) if config.tags else None
+                    tags=json.dumps(config.tags) if config.tags else None,
+                    ignores=json.dumps(config.ignores) if config.ignores else None,
+                    ignore_vcs=config.ignore_vcs
                 )
                 db.add(saved)
 
@@ -669,7 +726,9 @@ async def list_saved_connections():
                 "created_at": c.created_at.isoformat() if c.created_at else None,
                 "last_used": c.last_used.isoformat() if c.last_used else None,
                 "is_favorite": c.is_favorite,
-                "tags": json.loads(c.tags) if c.tags else []
+                "tags": json.loads(c.tags) if c.tags else [],
+                "ignores": json.loads(c.ignores) if c.ignores else [],
+                "ignore_vcs": c.ignore_vcs if c.ignore_vcs is not None else True
             }
             for c in connections
         ]
@@ -709,7 +768,9 @@ async def quick_connect(connection_id: int):
             local_path=connection.local_path,
             ssh_key_path=connection.ssh_key_path,
             sync_mode=connection.sync_mode,
-            tags=json.loads(connection.tags) if connection.tags else []
+            tags=json.loads(connection.tags) if connection.tags else [],
+            ignores=json.loads(connection.ignores) if connection.ignores else [],
+            ignore_vcs=connection.ignore_vcs if connection.ignore_vcs is not None else True
         )
 
         # Check if session already exists (use sanitized name)
@@ -745,6 +806,8 @@ async def get_connection(connection_id: int):
             "ssh_key_path": connection.ssh_key_path,
             "sync_mode": connection.sync_mode,
             "tags": json.loads(connection.tags) if connection.tags else [],
+            "ignores": json.loads(connection.ignores) if connection.ignores else [],
+            "ignore_vcs": connection.ignore_vcs if connection.ignore_vcs is not None else True,
             "created_at": connection.created_at.isoformat() if connection.created_at else None,
             "last_used": connection.last_used.isoformat() if connection.last_used else None,
             "is_favorite": connection.is_favorite
@@ -778,6 +841,8 @@ async def duplicate_connection(connection_id: int):
             ssh_key_path=connection.ssh_key_path,
             sync_mode=connection.sync_mode,
             tags=connection.tags,
+            ignores=connection.ignores,
+            ignore_vcs=connection.ignore_vcs,
             is_favorite=False
         )
 
@@ -885,6 +950,8 @@ async def import_connections(data: dict):
                     ssh_key_path=conn_data.get("ssh_key_path"),
                     sync_mode=conn_data.get("sync_mode", "one-way-safe"),
                     tags=json.dumps(conn_data.get("tags", [])),
+                    ignores=json.dumps(conn_data.get("ignores", [])),
+                    ignore_vcs=conn_data.get("ignore_vcs", True),
                     is_favorite=conn_data.get("is_favorite", False)
                 )
                 db.add(connection)

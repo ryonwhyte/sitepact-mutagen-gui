@@ -206,27 +206,36 @@ const SavedConnections: React.FC = () => {
             <Grid item xs={12} md={6} lg={4} key={connection.id}>
               <Card>
                 <CardContent>
-                  <Box display="flex" justifyContent="space-between" alignItems="start">
-                    <Box flex={1}>
-                      <Typography variant="h6" gutterBottom>
+                  <Box display="flex" justifyContent="space-between" alignItems="start" gap={1}>
+                    <Box flex={1} minWidth={0}>
+                      <Typography variant="h6" gutterBottom noWrap>
                         {connection.name}
                       </Typography>
-                      <Typography variant="body2" color="text.secondary">
+                      <Typography variant="body2" color="text.secondary" noWrap>
                         {connection.username}@{connection.host}:{connection.port}
                       </Typography>
-                      <Typography variant="caption" color="text.secondary" display="block" mt={1}>
+                      <Typography variant="caption" color="text.secondary" display="block" mt={1} sx={{ wordBreak: 'break-all' }}>
                         Remote: {connection.remote_path}
                       </Typography>
-                      <Typography variant="caption" color="text.secondary" display="block">
+                      <Typography variant="caption" color="text.secondary" display="block" sx={{ wordBreak: 'break-all' }}>
                         Local: {connection.local_path}
                       </Typography>
                     </Box>
                     <IconButton
                       size="small"
+                      sx={{ flexShrink: 0 }}
                       onClick={(e) => handleMenuClick(e, connection.id!)}
                     >
                       <MoreVert />
                     </IconButton>
+                  </Box>
+
+                  {/* Sync mode + exclusions summary */}
+                  <Box mt={1} display="flex" gap={0.5} flexWrap="wrap">
+                    <Chip label={connection.sync_mode} size="small" variant="outlined" />
+                    {connection.ignores && connection.ignores.length > 0 && (
+                      <Chip label={`${connection.ignores.length} ${connection.ignores.length === 1 ? 'ignore' : 'ignores'}`} size="small" variant="outlined" />
+                    )}
                   </Box>
 
                   {/* Tags */}
