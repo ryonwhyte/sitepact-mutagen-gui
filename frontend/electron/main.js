@@ -12,6 +12,13 @@ let mainWindow = null;
 let tray = null;
 let backendProcess = null;
 
+// On Wayland sessions (e.g. Ubuntu 26.04) Electron 38 defaults to native Wayland and
+// crashes with "Failed to initialize Wayland platform. Exiting." The old fix
+// (ELECTRON_OZONE_PLATFORM_HINT / --ozone-platform-hint) was REMOVED in Electron 38 and is
+// a no-op now, so we force the platform hard to X11 (XWayland), which launches cleanly.
+// Must run before app is ready. Override with MSM_OZONE_PLATFORM for a working Wayland setup.
+app.commandLine.appendSwitch('ozone-platform', process.env.MSM_OZONE_PLATFORM || 'x11');
+
 // Enable live reload for Electron in development
 if (isDev) {
   try {
@@ -27,13 +34,19 @@ if (isDev) {
 
 // Backend management
 function startBackend() {
+  // Tell the backend where to keep its database. app.getPath('userData') is a stable,
+  // writable, per-user location on every platform and packaging (deb/AppImage/snap), so the
+  // DB no longer depends on the process working directory (which is unstable under snap and
+  // was causing saved connections to "disappear").
+  const backendEnv = { ...process.env, MSM_DATA_DIR: app.getPath('userData') };
+
   if (isDev) {
     // Development: Use Python with venv
     const backendPath = path.join(__dirname, '..', '..', 'backend', 'main.py');
     const pythonPath = path.join(__dirname, '..', '..', 'backend', 'venv', 'bin', 'python');
 
     console.log('Starting backend in development mode...');
-    backendProcess = spawn(pythonPath, [backendPath]);
+    backendProcess = spawn(pythonPath, [backendPath], { env: backendEnv });
   } else {
     // Production: Use bundled executable (PyInstaller compiled)
     const backendPath = path.join(process.resourcesPath, 'backend', 'backend-server');
@@ -53,7 +66,7 @@ function startBackend() {
     }
 
     backendProcess = spawn(backendPath, [], {
-      env: { ...process.env }
+      env: backendEnv
     });
   }
 

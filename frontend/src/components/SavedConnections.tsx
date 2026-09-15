@@ -20,7 +20,9 @@ import {
   Fab,
   InputAdornment,
   Menu,
-  MenuItem
+  MenuItem,
+  Snackbar,
+  Alert
 } from '@mui/material';
 import {
   CloudUpload,
@@ -46,6 +48,7 @@ const SavedConnections: React.FC = () => {
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [snackbar, setSnackbar] = useState<{ msg: string; severity: 'success' | 'error' } | null>(null);
 
   // Fetch saved connections
   const { data: connections = [] } = useQuery({
@@ -101,17 +104,18 @@ const SavedConnections: React.FC = () => {
     input.accept = 'application/json';
     input.onchange = async (e: any) => {
       const file = e.target.files[0];
-      if (file) {
-        const text = await file.text();
-        const data = JSON.parse(text);
-
-        try {
-          const result = await apiClient.importConnections(data);
-          alert(`Imported ${result.imported} connections, skipped ${result.skipped} duplicates.`);
-          queryClient.invalidateQueries({ queryKey: ['connections'] });
-        } catch (error) {
-          alert(`Import failed: ${error}`);
-        }
+      if (!file) return;
+      try {
+        const data = JSON.parse(await file.text());
+        const result = await apiClient.importConnections(data);
+        setSnackbar({
+          msg: `Imported ${result.imported} connection(s), skipped ${result.skipped} duplicate(s).`,
+          severity: 'success',
+        });
+        queryClient.invalidateQueries({ queryKey: ['connections'] });
+      } catch (error: any) {
+        const detail = error?.response?.data?.detail || error?.message || String(error);
+        setSnackbar({ msg: `Import failed: ${detail}`, severity: 'error' });
       }
     };
     input.click();
@@ -345,6 +349,20 @@ const SavedConnections: React.FC = () => {
       >
         <Add />
       </Fab>
+
+      {/* Import/export feedback (in-app, avoids the native alert() that renders as boxes in the snap) */}
+      <Snackbar
+        open={!!snackbar}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        {snackbar ? (
+          <Alert severity={snackbar.severity} onClose={() => setSnackbar(null)} variant="filled">
+            {snackbar.msg}
+          </Alert>
+        ) : undefined}
+      </Snackbar>
     </Box>
   );
 };

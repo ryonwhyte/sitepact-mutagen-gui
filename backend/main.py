@@ -44,8 +44,36 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Database setup
-DATABASE_URL = "sqlite:///./mutagen_gui.db"
+# Database setup.
+# Stable, writable, per-user location, NOT the current working directory (which is unstable
+# under snap confinement and made saved connections vanish). Prefer the path Electron passes
+# in (app.getPath('userData')), then the snap shared area, then an XDG-style data dir.
+import shutil
+_data_dir = (
+    os.environ.get("MSM_DATA_DIR")
+    or os.environ.get("SNAP_USER_COMMON")
+    or os.path.join(os.path.expanduser("~"), ".local", "share", "mutagen-sync-manager")
+)
+os.makedirs(_data_dir, exist_ok=True)
+DB_PATH = os.path.join(_data_dir, "mutagen_gui.db")
+
+# One-time adopt: if no DB exists yet at the stable path, copy over an existing one from a
+# legacy/CWD location so previously saved connections carry across the upgrade.
+if not os.path.exists(DB_PATH):
+    _legacy_candidates = [
+        os.path.join(os.getcwd(), "mutagen_gui.db"),
+        os.path.join(os.environ["SNAP_USER_DATA"], "mutagen_gui.db") if os.environ.get("SNAP_USER_DATA") else None,
+        os.path.join(os.path.expanduser("~"), "mutagen_gui.db"),
+    ]
+    for _legacy in _legacy_candidates:
+        if _legacy and os.path.isfile(_legacy):
+            try:
+                shutil.copy2(_legacy, DB_PATH)
+            except Exception as _e:
+                logger.warning(f"Could not adopt legacy DB {_legacy}: {_e}")
+            break
+
+DATABASE_URL = f"sqlite:///{DB_PATH}"
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()

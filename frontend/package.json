@@ -64,6 +64,9 @@
     "snap": {
       "confinement": "strict",
       "grade": "stable",
+      "executableArgs": [
+        "--ozone-platform=x11"
+      ],
       "summary": "A modern desktop app for managing Mutagen file synchronization - by Sitepact",
       "description": "**Mutagen Sync Manager** is a modern desktop application for managing Mutagen file synchronization sessions with an intuitive graphical interface.\n\n_Developed by Sitepact (https://sitepact.com) to streamline plugin development on live server environments._\n\n_Seamlessly sync files between your local machine and remote servers via SSH._\n\n**Key Features:**\n\n* **Easy Connection Setup** - Configure SSH connections with automatic key management and host configuration\n* **Real-time Monitoring** - Watch sync status, conflicts, and connection health at a glance\n* **Multiple Sync Modes** - Two-way sync, one-way-safe, and one-way-replica modes\n* **Conflict Resolution** - Visual interface for resolving file conflicts\n* **Session Management** - Pause, resume, flush, and terminate sync sessions\n* **Import/Export** - Backup and restore your connection configurations\n* **Bundled Mutagen** - Includes Mutagen CLI, no separate installation required\n\n**Requirements:**\n\n* SSH access to remote servers\n\n**Perfect for:**\n\n* Web developers syncing code to remote servers\n* DevOps engineers managing multiple environments\n* Anyone needing reliable bidirectional file sync over SSH\n\nBuilt with _Electron_, _React_, _Material-UI_, and _FastAPI_.\n\nReport issues: https://github.com/ryonwhyte/sitepact-mutagen-gui/issues",
       "plugs": [

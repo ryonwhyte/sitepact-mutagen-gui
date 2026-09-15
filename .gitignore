@@ -17,6 +17,7 @@ backend/venv/
 backend/*.db
 backend/.env
 backend/dist/
+backend/dist-c/
 backend/build/
 backend/*.spec
 
