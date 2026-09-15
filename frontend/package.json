@@ -2,7 +2,7 @@
 {
   "name": "mutagen-sync-manager",
   "private": true,
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Mutagen Sync Manager - A modern desktop application for managing Mutagen file synchronization",
   "main": "electron/main.js",
   "author": {

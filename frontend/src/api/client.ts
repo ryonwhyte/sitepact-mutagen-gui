@@ -17,9 +17,17 @@ export interface Connection {
   tags: string[];
   ignores?: string[];
   ignore_vcs?: boolean;
+  delete_excluded?: boolean;
+  delete_excluded_mode?: 'ask' | 'auto';
   is_favorite?: boolean;
   created_at?: string;
   last_used?: string;
+}
+
+export interface ExcludedDeletionItem {
+  path: string;
+  exists_remote: boolean;
+  exists_local: boolean;
 }
 
 export interface SSHKey {
@@ -88,6 +96,21 @@ class ApiClient {
     return this.fetch('/sessions/create', {
       method: 'POST',
       body: JSON.stringify(connection),
+    });
+  }
+
+  // Excluded-path deletion (remote only), user-confirmed
+  async previewExcludedDeletions(connection: Connection): Promise<{ items: ExcludedDeletionItem[]; error?: string }> {
+    return this.fetch('/sessions/preview-excluded-deletions', {
+      method: 'POST',
+      body: JSON.stringify(connection),
+    });
+  }
+
+  async deleteExcluded(connection: Connection, paths: string[]): Promise<{ deleted: string[]; failed: { path: string; error: string }[] }> {
+    return this.fetch('/sessions/delete-excluded', {
+      method: 'POST',
+      body: JSON.stringify({ config: connection, paths }),
     });
   }
 

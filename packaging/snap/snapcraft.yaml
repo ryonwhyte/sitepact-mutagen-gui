@@ -1,0 +1,50 @@
+name: mutagen-sync-manager
+base: core24
+version: '1.4.0'
+title: Mutagen Sync Manager
+summary: A modern desktop app for managing Mutagen file synchronization - by Sitepact
+description: |
+  Mutagen Sync Manager is a modern desktop application for managing Mutagen file
+  synchronization sessions between your local machine and remote servers over SSH.
+
+  Developed by Sitepact (https://sitepact.com).
+grade: stable
+confinement: strict
+compression: lzo
+
+platforms:
+  amd64:
+
+apps:
+  mutagen-sync-manager:
+    command: command.sh
+    extensions: [gnome]
+    plugs:
+      - home
+      - network
+      - network-bind
+      - ssh-keys
+      - ssh-public-keys
+      - removable-media
+      - browser-support
+    environment:
+      # The app forces X11/XWayland (Electron 38 native Wayland is unreliable). The gnome
+      # extension provides the desktop runtime (GTK, fonts, themes) so native dialogs render.
+      DISABLE_WAYLAND: '1'
+      # ssh-shim (first) forces the bundled ssh to use the app-written config in $HOME;
+      # $SNAP/usr/bin has the real bundled ssh + openssh client that the shim calls.
+      PATH: $SNAP/ssh-shim:$SNAP/usr/bin:$SNAP/bin:$PATH
+
+parts:
+  # The prebuilt Electron app (electron-builder linux-unpacked) plus a bundled ssh client so
+  # the confined snap does not need to exec the host's /usr/bin/ssh.
+  app:
+    plugin: dump
+    source: app-src
+    stage-packages:
+      - openssh-client
+  launcher:
+    plugin: dump
+    source: launcher
+    organize:
+      ssh: ssh-shim/ssh

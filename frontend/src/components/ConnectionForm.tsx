@@ -16,7 +16,10 @@ import {
   InputAdornment,
   Snackbar,
   FormControlLabel,
-  Switch
+  Switch,
+  RadioGroup,
+  Radio,
+  FormLabel
 } from '@mui/material';
 import {
   Save,
@@ -26,9 +29,10 @@ import {
   Add
 } from '@mui/icons-material';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { apiClient, Connection, SSHKey } from '../api/client';
+import { apiClient, Connection, SSHKey, ExcludedDeletionItem } from '../api/client';
 import { useNavigate, useParams } from 'react-router-dom';
 import InitialSyncDialog from './InitialSyncDialog';
+import ExcludedDeletionDialog from './ExcludedDeletionDialog';
 
 // Quick-add exclusion presets. Clicking one merges its patterns into the list.
 const IGNORE_PRESETS: { label: string; patterns: string[] }[] = [
@@ -48,6 +52,13 @@ const ConnectionForm: React.FC = () => {
   const [syncDialogOpen, setSyncDialogOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isLoading, setIsLoading] = useState(isEditMode);
+  // Excluded-path deletion confirmation (remote only), shown between initial sync and create
+  const [pendingCreate, setPendingCreate] = useState<Connection | null>(null);
+  const [deletionItems, setDeletionItems] = useState<ExcludedDeletionItem[]>([]);
+  const [deletionSelected, setDeletionSelected] = useState<string[]>([]);
+  const [deletionRemember, setDeletionRemember] = useState(false);
+  const [deletionOpen, setDeletionOpen] = useState(false);
+  const [deletionBusy, setDeletionBusy] = useState(false);
 
   const [formData, setFormData] = useState<Connection>({
     name: '',
@@ -61,6 +72,8 @@ const ConnectionForm: React.FC = () => {
     tags: [],
     ignores: [],
     ignore_vcs: true,
+    delete_excluded: false,
+    delete_excluded_mode: 'ask',
   });
 
   // Fetch SSH keys
@@ -161,19 +174,85 @@ const ConnectionForm: React.FC = () => {
     }
   };
 
-  const handleSyncConfirm = (direction: 'download' | 'upload' | 'skip') => {
+  const runCreate = (data: Connection) => {
     setIsSyncing(true);
-    // Add the initial sync direction to the form data
-    const dataWithSync = {
-      ...formData,
-      initial_sync_direction: direction
-    };
-    createMutation.mutate(dataWithSync, {
+    createMutation.mutate(data, {
       onSettled: () => {
         setIsSyncing(false);
         setSyncDialogOpen(false);
       }
     });
+  };
+
+  const handleSyncConfirm = async (direction: 'download' | 'upload' | 'skip') => {
+    const dataWithSync: Connection = {
+      ...formData,
+      initial_sync_direction: direction,
+    } as Connection;
+
+    // If not deleting excluded paths, create straight away.
+    if (!dataWithSync.delete_excluded || !dataWithSync.ignores?.length) {
+      runCreate(dataWithSync);
+      return;
+    }
+
+    // Lock the sync dialog while we probe the remote so a double-click can't fire twice.
+    setIsSyncing(true);
+    try {
+      const preview = await apiClient.previewExcludedDeletions(dataWithSync);
+      const present = (preview.items || []).filter(i => i.exists_remote);
+      if (preview.error || present.length === 0) {
+        runCreate(dataWithSync);
+        return;
+      }
+      if (dataWithSync.delete_excluded_mode === 'auto') {
+        await apiClient.deleteExcluded(dataWithSync, present.map(i => i.path)).catch(() => undefined);
+        runCreate(dataWithSync);
+        return;
+      }
+      // Ask: close the sync dialog and hand off to the confirmation dialog.
+      setIsSyncing(false);
+      setSyncDialogOpen(false);
+      setPendingCreate(dataWithSync);
+      setDeletionItems(present);
+      setDeletionSelected(present.filter(i => i.exists_local).map(i => i.path));
+      setDeletionRemember(false);
+      setDeletionOpen(true);
+    } catch {
+      runCreate(dataWithSync);
+    }
+  };
+
+  const finishPendingCreate = (data: Connection) => {
+    setDeletionOpen(false);
+    setDeletionItems([]);
+    setDeletionSelected([]);
+    setPendingCreate(null);
+    runCreate(data);
+  };
+
+  const runDeletionThenCreate = async () => {
+    if (!pendingCreate) return;
+    setDeletionBusy(true);
+    try {
+      await apiClient.deleteExcluded(pendingCreate, deletionSelected);
+    } catch {
+      // Non-fatal: proceed to create even if deletion failed.
+    } finally {
+      setDeletionBusy(false);
+      const data = deletionRemember
+        ? { ...pendingCreate, delete_excluded: true, delete_excluded_mode: 'auto' as const }
+        : pendingCreate;
+      finishPendingCreate(data);
+    }
+  };
+
+  const skipDeletionThenCreate = () => {
+    if (!pendingCreate) return;
+    const data = deletionRemember
+      ? { ...pendingCreate, delete_excluded: false, delete_excluded_mode: 'ask' as const }
+      : pendingCreate;
+    finishPendingCreate(data);
   };
 
   const selectLocalPath = async () => {
@@ -479,6 +558,49 @@ const ConnectionForm: React.FC = () => {
                 }
                 label="Ignore VCS directories (.git, .svn, ...)"
               />
+              <FormControlLabel
+                sx={{ mt: 0.5, display: 'flex' }}
+                control={
+                  <Switch
+                    color="warning"
+                    checked={formData.delete_excluded === true}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, delete_excluded: e.target.checked }))
+                    }
+                  />
+                }
+                label={
+                  <Box>
+                    <Typography variant="body2">Delete excluded paths from the remote on connect</Typography>
+                    <Typography variant="caption" color="warning.main">
+                      Destructive: removes matching top-level folders/files on the remote server.
+                      Your local copies are never touched.
+                    </Typography>
+                  </Box>
+                }
+              />
+              {formData.delete_excluded && (
+                <FormControl sx={{ mt: 1, ml: 6 }}>
+                  <FormLabel sx={{ fontSize: '0.8rem' }}>When excluded paths exist on the remote</FormLabel>
+                  <RadioGroup
+                    value={formData.delete_excluded_mode || 'ask'}
+                    onChange={(e) =>
+                      setFormData((prev) => ({ ...prev, delete_excluded_mode: e.target.value as 'ask' | 'auto' }))
+                    }
+                  >
+                    <FormControlLabel
+                      value="ask"
+                      control={<Radio size="small" />}
+                      label={<Typography variant="body2">Ask me each time (recommended)</Typography>}
+                    />
+                    <FormControlLabel
+                      value="auto"
+                      control={<Radio size="small" color="warning" />}
+                      label={<Typography variant="body2">Delete automatically without asking</Typography>}
+                    />
+                  </RadioGroup>
+                </FormControl>
+              )}
             </Grid>
 
             {/* Error Display */}
@@ -544,6 +666,22 @@ const ConnectionForm: React.FC = () => {
         remotePath={formData.remote_path}
         isFirstTime={true}
         isSyncing={isSyncing}
+      />
+
+      <ExcludedDeletionDialog
+        open={deletionOpen}
+        connectionName={pendingCreate?.name || formData.name}
+        items={deletionItems}
+        selected={deletionSelected}
+        onToggle={(path) =>
+          setDeletionSelected(prev => prev.includes(path) ? prev.filter(p => p !== path) : [...prev, path])
+        }
+        onDelete={runDeletionThenCreate}
+        onSkip={skipDeletionThenCreate}
+        onCancel={() => { if (!deletionBusy) { setDeletionOpen(false); setPendingCreate(null); setDeletionItems([]); setDeletionSelected([]); setDeletionRemember(false); } }}
+        remember={deletionRemember}
+        onRememberChange={setDeletionRemember}
+        busy={deletionBusy}
       />
     </Box>
   );

@@ -97,6 +97,8 @@ class SavedConnection(Base):
     tags = Column(Text, nullable=True)  # JSON array of tags
     ignores = Column(Text, nullable=True)  # JSON array of ignore paths/globs
     ignore_vcs = Column(Boolean, default=True)  # pass --ignore-vcs to mutagen
+    delete_excluded = Column(Boolean, default=False)  # rm excluded paths on the remote at connect
+    delete_excluded_mode = Column(String, default="ask")  # 'ask' = confirm each connect, 'auto' = delete without asking
 
 Base.metadata.create_all(bind=engine)
 
@@ -108,6 +110,8 @@ def _migrate_add_columns():
     wanted = {
         "ignores": "TEXT",
         "ignore_vcs": "BOOLEAN DEFAULT 1",
+        "delete_excluded": "BOOLEAN DEFAULT 0",
+        "delete_excluded_mode": "TEXT DEFAULT 'ask'",
     }
     with engine.connect() as conn:
         existing = {row[1] for row in conn.execute(text("PRAGMA table_info(saved_connections)"))}
@@ -131,6 +135,8 @@ class ConnectionConfig(BaseModel):
     tags: List[str] = []
     ignores: List[str] = []  # paths/globs excluded from sync (mutagen --ignore)
     ignore_vcs: bool = True  # exclude VCS dirs like .git (mutagen --ignore-vcs)
+    delete_excluded: bool = False  # rm excluded top-level paths on the remote at connect
+    delete_excluded_mode: str = "ask"  # 'ask' = confirm each connect, 'auto' = delete without asking
     initial_sync_direction: Optional[str] = None  # 'download', 'upload', or 'skip'
 
 class SessionAction(BaseModel):
@@ -320,6 +326,17 @@ class MutagenManager:
             "-e", ssh_cmd
         ]
 
+        # Honor the same exclusions mutagen will use, so the initial transfer does not copy
+        # (or, on upload, re-create) content that the sync ignores. Keeps rsync consistent
+        # with the session and avoids undoing a delete-excluded cleanup.
+        if config.ignore_vcs:
+            for vcs in (".git", ".svn", ".hg", ".bzr", "_darcs"):
+                rsync_args.append(f"--exclude={vcs}")
+        for pattern in (config.ignores or []):
+            pattern = (pattern or "").strip()
+            if pattern:
+                rsync_args.append(f"--exclude={pattern}")
+
         if direction == 'download':
             # Download from remote to local
             rsync_args.extend([f"{remote_url}/", config.local_path])
@@ -450,6 +467,11 @@ class MutagenManager:
             else:
                 remote_url = f"{config.username}@{config.host}:{config.remote_path}"
 
+        # Note: removing excluded paths from the remote is NOT done here. It is a separate,
+        # user-confirmed step (preview_excluded_deletions -> delete_excluded_paths) driven from
+        # the UI, so remote-only paths (no local copy, permanent loss) can be approved per-path
+        # before anything is deleted. Ignored paths never sync, so deletion order is irrelevant.
+
         # Determine source and destination based on sync mode
         # For two-way modes, order doesn't matter much
         # For one-way modes, we need to be careful
@@ -463,6 +485,116 @@ class MutagenManager:
         # Run the command - Mutagen will use system SSH config and agent
         result = await self.run_command(*args, timeout=120)
         return result
+
+    def _excluded_literal_paths(self, config):
+        """The subset of ignores that are safe to delete: literal TOP-LEVEL names only.
+        Skips globs, slashes (anything nested), dot-only entries and traversal, so a delete
+        can only ever remove something the user explicitly listed, directly inside the
+        remote/local sync directory. De-duplicated, order preserved."""
+        out, seen = [], set()
+        for pattern in (config.ignores or []):
+            p = (pattern or "").strip()
+            if not p or p in (".", "..") or "/" in p or any(c in p for c in "*?[]"):
+                continue
+            if p not in seen:
+                seen.add(p)
+                out.append(p)
+        return out
+
+    def _remote_ssh_base(self, config):
+        """Direct ssh invocation for the remote endpoint (no dependency on a session alias
+        having been written yet). The bundled ssh shim adds -F $HOME/.ssh/config; the extra
+        -o flags keep an unknown host from blocking a non-interactive command."""
+        ssh_base = ["ssh", "-p", str(config.port or 22),
+                    "-o", "StrictHostKeyChecking=no",
+                    "-o", "UserKnownHostsFile=/dev/null",
+                    "-o", "BatchMode=yes"]
+        if config.ssh_key_path:
+            ssh_base += ["-i", config.ssh_key_path]
+        ssh_base.append(f"{config.username}@{config.host}")
+        return ssh_base
+
+    async def preview_excluded_deletions(self, config):
+        """Report, per literal excluded path, whether it currently exists on the remote and
+        whether a local copy exists. Nothing is deleted. Paths that exist on the remote but
+        NOT locally are permanent losses if removed, so the UI can flag them for explicit
+        opt-in. Returns {"items": [{path, exists_remote, exists_local}], "error": <optional>}."""
+        import shlex
+        rp = (config.remote_path or "").rstrip("/")
+        if not rp or rp in ("/", "~", "."):
+            return {"items": [], "error": f"Refusing to inspect unsafe remote path {config.remote_path!r}"}
+
+        paths = self._excluded_literal_paths(config)
+        if not paths:
+            return {"items": []}
+
+        # One round-trip: emit "Y <idx>" / "N <idx>" per path.
+        script_lines = []
+        for idx, p in enumerate(paths):
+            target = shlex.quote(f"{rp}/{p}")
+            script_lines.append(f'if [ -e {target} ]; then echo "Y {idx}"; else echo "N {idx}"; fi')
+        remote_script = "\n".join(script_lines)
+
+        remote_exists = {}
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *self._remote_ssh_base(config), remote_script,
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+            if proc.returncode != 0:
+                return {"items": [], "error": (stderr or b"").decode()[:300].strip() or "SSH connection failed"}
+            for line in (stdout or b"").decode().splitlines():
+                parts = line.strip().split()
+                if len(parts) == 2 and parts[0] in ("Y", "N") and parts[1].isdigit():
+                    remote_exists[int(parts[1])] = (parts[0] == "Y")
+        except Exception as e:
+            return {"items": [], "error": str(e)}
+
+        items = []
+        for idx, p in enumerate(paths):
+            local_exists = os.path.exists(os.path.join(config.local_path or "", p))
+            items.append({
+                "path": p,
+                "exists_remote": bool(remote_exists.get(idx, False)),
+                "exists_local": bool(local_exists),
+            })
+        return {"items": items}
+
+    async def delete_excluded_paths(self, config, approved_paths):
+        """Delete the APPROVED literal excluded paths from the remote endpoint only (local is
+        never touched). Re-validates every path against the literal-name filter, so only paths
+        that are both currently excluded AND user-approved can be removed."""
+        import shlex
+        rp = (config.remote_path or "").rstrip("/")
+        if not rp or rp in ("/", "~", "."):
+            return {"deleted": [], "failed": [{"path": "", "error": "unsafe remote path"}]}
+
+        allowed = set(self._excluded_literal_paths(config))
+        ssh_base = self._remote_ssh_base(config)
+        deleted, failed = [], []
+        for p in (approved_paths or []):
+            p = (p or "").strip()
+            if p not in allowed:
+                failed.append({"path": p, "error": "not an approved excluded path"})
+                continue
+            remote_target = f"{rp}/{p}"
+            remote_cmd = f"rm -rf -- {shlex.quote(remote_target)}"
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *ssh_base, remote_cmd,
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                _, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+                if proc.returncode == 0:
+                    logger.info(f"delete_excluded: removed remote path {remote_target}")
+                    deleted.append(p)
+                else:
+                    err = (stderr or b"").decode()[:200].strip()
+                    logger.warning(f"delete_excluded: rm failed for {remote_target}: {err}")
+                    failed.append({"path": p, "error": err or "rm failed"})
+            except Exception as e:
+                logger.warning(f"delete_excluded: error deleting {remote_target}: {e}")
+                failed.append({"path": p, "error": str(e)})
+        return {"deleted": deleted, "failed": failed}
 
     async def perform_action(self, session_name: str, action: str) -> str:
         """Perform an action on a session"""
@@ -629,6 +761,8 @@ async def create_session(config: ConnectionConfig):
                 existing.tags = json.dumps(config.tags) if config.tags else None
                 existing.ignores = json.dumps(config.ignores) if config.ignores else None
                 existing.ignore_vcs = config.ignore_vcs
+                existing.delete_excluded = config.delete_excluded
+                existing.delete_excluded_mode = config.delete_excluded_mode
                 existing.last_used = datetime.now()
             else:
                 # Create new connection
@@ -643,7 +777,9 @@ async def create_session(config: ConnectionConfig):
                     sync_mode=config.sync_mode,
                     tags=json.dumps(config.tags) if config.tags else None,
                     ignores=json.dumps(config.ignores) if config.ignores else None,
-                    ignore_vcs=config.ignore_vcs
+                    ignore_vcs=config.ignore_vcs,
+                    delete_excluded=config.delete_excluded,
+                    delete_excluded_mode=config.delete_excluded_mode
                 )
                 db.add(saved)
 
@@ -658,6 +794,29 @@ async def create_session(config: ConnectionConfig):
         return {"message": "Session created", "result": result}
     except Exception as e:
         logger.error(f"Failed to create session: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/sessions/preview-excluded-deletions")
+async def preview_excluded_deletions(config: ConnectionConfig):
+    """Report which excluded (literal top-level) paths currently exist on the remote and
+    whether a local copy exists. Deletes nothing. Used to let the user approve deletions,
+    especially remote-only paths that have no local copy to restore from."""
+    try:
+        return await mutagen_mgr.preview_excluded_deletions(config)
+    except Exception as e:
+        logger.error(f"Failed to preview excluded deletions: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/sessions/delete-excluded")
+async def delete_excluded(payload: dict):
+    """Delete user-approved excluded paths from the remote endpoint only. Body:
+    {"config": <ConnectionConfig>, "paths": ["node_modules", ...]}."""
+    try:
+        config = ConnectionConfig(**(payload.get("config") or {}))
+        approved = payload.get("paths") or []
+        return await mutagen_mgr.delete_excluded_paths(config, approved)
+    except Exception as e:
+        logger.error(f"Failed to delete excluded paths: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/sessions/action")
@@ -780,7 +939,9 @@ async def list_saved_connections():
                 "is_favorite": c.is_favorite,
                 "tags": json.loads(c.tags) if c.tags else [],
                 "ignores": json.loads(c.ignores) if c.ignores else [],
-                "ignore_vcs": c.ignore_vcs if c.ignore_vcs is not None else True
+                "ignore_vcs": c.ignore_vcs if c.ignore_vcs is not None else True,
+                "delete_excluded": bool(c.delete_excluded),
+                "delete_excluded_mode": c.delete_excluded_mode or "ask"
             }
             for c in connections
         ]
@@ -822,7 +983,9 @@ async def quick_connect(connection_id: int):
             sync_mode=connection.sync_mode,
             tags=json.loads(connection.tags) if connection.tags else [],
             ignores=json.loads(connection.ignores) if connection.ignores else [],
-            ignore_vcs=connection.ignore_vcs if connection.ignore_vcs is not None else True
+            ignore_vcs=connection.ignore_vcs if connection.ignore_vcs is not None else True,
+            delete_excluded=bool(connection.delete_excluded),
+            delete_excluded_mode=connection.delete_excluded_mode or "ask"
         )
 
         # Check if session already exists (use sanitized name)
@@ -860,6 +1023,8 @@ async def get_connection(connection_id: int):
             "tags": json.loads(connection.tags) if connection.tags else [],
             "ignores": json.loads(connection.ignores) if connection.ignores else [],
             "ignore_vcs": connection.ignore_vcs if connection.ignore_vcs is not None else True,
+            "delete_excluded": bool(connection.delete_excluded),
+            "delete_excluded_mode": connection.delete_excluded_mode or "ask",
             "created_at": connection.created_at.isoformat() if connection.created_at else None,
             "last_used": connection.last_used.isoformat() if connection.last_used else None,
             "is_favorite": connection.is_favorite
@@ -895,6 +1060,8 @@ async def duplicate_connection(connection_id: int):
             tags=connection.tags,
             ignores=connection.ignores,
             ignore_vcs=connection.ignore_vcs,
+            delete_excluded=connection.delete_excluded,
+            delete_excluded_mode=connection.delete_excluded_mode,
             is_favorite=False
         )
 
@@ -926,6 +1093,10 @@ async def update_connection(connection_id: int, config: ConnectionConfig):
         connection.ssh_key_path = config.ssh_key_path
         connection.sync_mode = config.sync_mode
         connection.tags = json.dumps(config.tags) if config.tags else None
+        connection.ignores = json.dumps(config.ignores) if config.ignores else None
+        connection.ignore_vcs = config.ignore_vcs
+        connection.delete_excluded = config.delete_excluded
+        connection.delete_excluded_mode = config.delete_excluded_mode
 
         db.commit()
 
@@ -1004,6 +1175,8 @@ async def import_connections(data: dict):
                     tags=json.dumps(conn_data.get("tags", [])),
                     ignores=json.dumps(conn_data.get("ignores", [])),
                     ignore_vcs=conn_data.get("ignore_vcs", True),
+                    delete_excluded=conn_data.get("delete_excluded", False),
+                    delete_excluded_mode=conn_data.get("delete_excluded_mode", "ask"),
                     is_favorite=conn_data.get("is_favorite", False)
                 )
                 db.add(connection)

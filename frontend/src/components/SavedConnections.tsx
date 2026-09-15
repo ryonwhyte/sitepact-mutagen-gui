@@ -38,7 +38,8 @@ import {
   ContentCopy
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiClient, Connection } from '../api/client';
+import { apiClient, Connection, ExcludedDeletionItem } from '../api/client';
+import ExcludedDeletionDialog from './ExcludedDeletionDialog';
 
 const SavedConnections: React.FC = () => {
   const navigate = useNavigate();
@@ -49,6 +50,11 @@ const SavedConnections: React.FC = () => {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [snackbar, setSnackbar] = useState<{ msg: string; severity: 'success' | 'error' } | null>(null);
+  // Excluded-path deletion confirmation (remote only)
+  const [deletion, setDeletion] = useState<{ connection: Connection; items: ExcludedDeletionItem[] } | null>(null);
+  const [deletionSelected, setDeletionSelected] = useState<string[]>([]);
+  const [deletionRemember, setDeletionRemember] = useState(false);
+  const [deletionBusy, setDeletionBusy] = useState(false);
 
   // Fetch saved connections
   const { data: connections = [] } = useQuery({
@@ -72,6 +78,108 @@ const SavedConnections: React.FC = () => {
       navigate('/sessions');
     },
   });
+
+  // Connect flow. If the connection is set to delete excluded paths on the remote, first
+  // preview what exists there and let the user approve deletions (esp. remote-only paths)
+  // before connecting. Otherwise connect straight away.
+  const handleConnect = async (connection: Connection) => {
+    if (!connection.delete_excluded || !connection.ignores?.length) {
+      connectMutation.mutate(connection.id!);
+      return;
+    }
+    try {
+      const preview = await apiClient.previewExcludedDeletions(connection);
+      const present = (preview.items || []).filter(i => i.exists_remote);
+      if (preview.error) {
+        setSnackbar({ msg: `Could not check remote for excluded paths: ${preview.error}. Connecting without deleting.`, severity: 'error' });
+        connectMutation.mutate(connection.id!);
+        return;
+      }
+      if (present.length === 0) {
+        connectMutation.mutate(connection.id!);
+        return;
+      }
+      // Remembered "auto" choice: delete everything excluded that exists on the remote without
+      // prompting, then connect.
+      if (connection.delete_excluded_mode === 'auto') {
+        setDeletionBusy(true);
+        try {
+          const res = await apiClient.deleteExcluded(connection, present.map(i => i.path));
+          if (res.failed?.length) {
+            setSnackbar({ msg: `Auto-deleted ${res.deleted.length}, failed ${res.failed.length} on the remote.`, severity: 'error' });
+          } else if (res.deleted?.length) {
+            setSnackbar({ msg: `Auto-removed ${res.deleted.length} excluded path(s) from the remote.`, severity: 'success' });
+          }
+        } catch (error: any) {
+          setSnackbar({ msg: `Auto-delete failed: ${error?.message || error}`, severity: 'error' });
+        } finally {
+          setDeletionBusy(false);
+          connectMutation.mutate(connection.id!);
+        }
+        return;
+      }
+      // Ask mode: default-select the safe ones (also present locally, will re-sync); leave
+      // remote-only paths unchecked so their permanent deletion needs a deliberate click.
+      setDeletionSelected(present.filter(i => i.exists_local).map(i => i.path));
+      setDeletionRemember(false);
+      setDeletion({ connection, items: present });
+    } catch (error: any) {
+      setSnackbar({ msg: `Preview failed: ${error?.message || error}. Connecting without deleting.`, severity: 'error' });
+      connectMutation.mutate(connection.id!);
+    }
+  };
+
+  const toggleDeletionPath = (path: string) => {
+    setDeletionSelected(prev => prev.includes(path) ? prev.filter(p => p !== path) : [...prev, path]);
+  };
+
+  // Persist a remembered choice on the connection so we stop prompting on future connects.
+  // 'auto' = always delete without asking; feature off = never delete / never ask.
+  const rememberChoice = async (connection: Connection, choice: 'auto' | 'off') => {
+    try {
+      await apiClient.updateConnection(connection.id!, {
+        ...connection,
+        delete_excluded: choice === 'auto',
+        delete_excluded_mode: choice === 'auto' ? 'auto' : 'ask',
+      });
+      queryClient.invalidateQueries({ queryKey: ['connections'] });
+    } catch (error: any) {
+      setSnackbar({ msg: `Could not save your choice: ${error?.message || error}`, severity: 'error' });
+    }
+  };
+
+  const runDeletionThenConnect = async () => {
+    if (!deletion) return;
+    const connection = deletion.connection;
+    setDeletionBusy(true);
+    try {
+      const res = await apiClient.deleteExcluded(connection, deletionSelected);
+      if (res.failed?.length) {
+        setSnackbar({ msg: `Deleted ${res.deleted.length}, failed ${res.failed.length}: ${res.failed.map(f => f.path).join(', ')}`, severity: 'error' });
+      } else if (res.deleted?.length) {
+        setSnackbar({ msg: `Removed ${res.deleted.length} path(s) from the remote.`, severity: 'success' });
+      }
+      if (deletionRemember) await rememberChoice(connection, 'auto');
+    } catch (error: any) {
+      setSnackbar({ msg: `Delete failed: ${error?.message || error}`, severity: 'error' });
+    } finally {
+      const id = connection.id!;
+      setDeletionBusy(false);
+      setDeletion(null);
+      setDeletionSelected([]);
+      connectMutation.mutate(id);
+    }
+  };
+
+  const skipDeletionThenConnect = async () => {
+    if (!deletion) return;
+    const connection = deletion.connection;
+    const id = connection.id!;
+    if (deletionRemember) await rememberChoice(connection, 'off');
+    setDeletion(null);
+    setDeletionSelected([]);
+    connectMutation.mutate(id);
+  };
 
   // Duplicate mutation
   const duplicateMutation = useMutation({
@@ -240,6 +348,18 @@ const SavedConnections: React.FC = () => {
                     {connection.ignores && connection.ignores.length > 0 && (
                       <Chip label={`${connection.ignores.length} ${connection.ignores.length === 1 ? 'ignore' : 'ignores'}`} size="small" variant="outlined" />
                     )}
+                    {connection.delete_excluded && (
+                      <Tooltip title={connection.delete_excluded_mode === 'auto'
+                        ? 'Excluded paths are deleted from the remote automatically on connect'
+                        : 'You are asked before excluded paths are deleted from the remote on connect'}>
+                        <Chip
+                          label={connection.delete_excluded_mode === 'auto' ? 'auto-delete excluded' : 'delete excluded (ask)'}
+                          size="small"
+                          color="warning"
+                          variant={connection.delete_excluded_mode === 'auto' ? 'filled' : 'outlined'}
+                        />
+                      </Tooltip>
+                    )}
                   </Box>
 
                   {/* Tags */}
@@ -268,8 +388,8 @@ const SavedConnections: React.FC = () => {
                     size="small"
                     variant="contained"
                     startIcon={<CloudUpload />}
-                    onClick={() => connectMutation.mutate(connection.id!)}
-                    disabled={connectMutation.isPending}
+                    onClick={() => handleConnect(connection)}
+                    disabled={connectMutation.isPending || deletionBusy}
                   >
                     Connect
                   </Button>
@@ -363,6 +483,20 @@ const SavedConnections: React.FC = () => {
           </Alert>
         ) : undefined}
       </Snackbar>
+
+      <ExcludedDeletionDialog
+        open={!!deletion}
+        connectionName={deletion?.connection.name || ''}
+        items={deletion?.items || []}
+        selected={deletionSelected}
+        onToggle={toggleDeletionPath}
+        onDelete={runDeletionThenConnect}
+        onSkip={skipDeletionThenConnect}
+        onCancel={() => { if (!deletionBusy) { setDeletion(null); setDeletionSelected([]); setDeletionRemember(false); } }}
+        remember={deletionRemember}
+        onRememberChange={setDeletionRemember}
+        busy={deletionBusy}
+      />
     </Box>
   );
 };

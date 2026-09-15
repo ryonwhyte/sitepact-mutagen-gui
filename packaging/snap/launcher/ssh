@@ -1,0 +1,10 @@
+#!/bin/bash
+# Shim so the bundled mutagen finds the app-written SSH config. ssh normally reads the config
+# from the passwd home (~/.ssh/config), but under the snap the app can only write to $HOME
+# (the snap's data dir). Force ssh to use that config when present.
+CFG="$HOME/.ssh/config"
+if [ -f "$CFG" ]; then
+  exec "$SNAP/usr/bin/ssh" -F "$CFG" "$@"
+else
+  exec "$SNAP/usr/bin/ssh" "$@"
+fi
