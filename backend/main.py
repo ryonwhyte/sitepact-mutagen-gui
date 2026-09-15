@@ -520,26 +520,50 @@ async def root():
 
 @app.get("/api/ssh-keys")
 async def list_ssh_keys() -> List[SSHKey]:
-    """List available SSH keys"""
-    ssh_dir = Path.home() / ".ssh"
-    keys = []
+    """List available SSH keys.
 
-    if ssh_dir.exists():
-        for file in ssh_dir.iterdir():
-            if file.is_file() and not file.name.endswith('.pub'):
-                # Check if it looks like a private key
-                try:
-                    with open(file, 'r') as f:
-                        first_line = f.readline()
-                        if 'PRIVATE KEY' in first_line or file.name.startswith('id_'):
-                            keys.append(SSHKey(
-                                name=file.name,
-                                path=str(file)
-                            ))
-                except:
-                    pass
+    Under snap confinement the ssh-keys plug lets us READ a specific key file (so mutagen can
+    use it) but NOT list ~/.ssh (iterdir raises PermissionError). So we do not depend on
+    directory enumeration: we collect candidate key paths from (1) the keys already referenced
+    by saved connections, (2) directory enumeration if it happens to be allowed, and (3) a few
+    common defaults, then keep the ones that are actually present. This keeps the dropdown
+    populated with the user's real keys even inside the snap.
+    """
+    real_home = os.environ.get("SNAP_REAL_HOME") or str(Path.home())
+    ssh_dir = os.path.join(real_home, ".ssh")
 
-    return keys
+    # name -> path, so duplicates collapse and connection-referenced keys win.
+    found = {}
+
+    # (1) Keys referenced by saved connections. These are known-good paths the snap can read;
+    # include them unconditionally (do not stat, in case listing/stat is restricted).
+    try:
+        with get_db() as db:
+            for c in db.query(SavedConnection).all():
+                p = c.ssh_key_path
+                if p and not p.endswith(".pub"):
+                    found[p] = os.path.basename(p)
+    except Exception as e:
+        logger.warning(f"Could not read connection keys: {e}")
+
+    # (2) + (3) Directory enumeration (may be denied under snap) plus common defaults; only
+    # keep entries that actually exist and are readable.
+    fs_candidates = set(os.path.join(ssh_dir, n) for n in ("id_ed25519", "id_rsa", "id_ecdsa"))
+    try:
+        for name in os.listdir(ssh_dir):
+            fs_candidates.add(os.path.join(ssh_dir, name))
+    except Exception:
+        pass  # not listable under confinement; the connection keys above still populate the list
+    for path in fs_candidates:
+        if path.endswith(".pub") or path in found:
+            continue
+        try:
+            if os.path.isfile(path):
+                found[path] = os.path.basename(path)
+        except Exception:
+            pass
+
+    return [SSHKey(name=name, path=path) for path, name in sorted(found.items(), key=lambda kv: kv[1])]
 
 @app.get("/api/system/mutagen-installed")
 async def check_mutagen_installed():
